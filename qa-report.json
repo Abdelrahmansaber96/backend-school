@@ -1,0 +1,242 @@
+{
+  "generatedAt": "2026-04-21T19:31:22.370Z",
+  "section1": {
+    "school": {
+      "id": "69e7d08a03fb5f57de609554",
+      "name": "مدرسة النخبة التجريبية",
+      "subdomain": "qa-school"
+    },
+    "counts": {
+      "schools": 1,
+      "admins": 1,
+      "teachers": 5,
+      "students": 20,
+      "parents": 20,
+      "classes": 3,
+      "subjects": 5,
+      "attendance": 44,
+      "behavior": 40,
+      "conversations": 6,
+      "messages": 24,
+      "notifications": 108,
+      "uploads": 17
+    },
+    "sampleUsers": {
+      "admin": "8200000001",
+      "teacher": "8210000001",
+      "parent": "8220000001",
+      "student": "8230000001"
+    },
+    "dateRange": {
+      "startDate": "2026-04-06T22:00:00.000Z",
+      "endDate": "2026-04-19T22:00:00.000Z",
+      "schoolDays": [
+        "2026-04-06T22:00:00.000Z",
+        "2026-04-07T22:00:00.000Z",
+        "2026-04-08T22:00:00.000Z",
+        "2026-04-11T22:00:00.000Z",
+        "2026-04-12T22:00:00.000Z",
+        "2026-04-13T22:00:00.000Z",
+        "2026-04-14T22:00:00.000Z",
+        "2026-04-15T22:00:00.000Z",
+        "2026-04-18T22:00:00.000Z",
+        "2026-04-19T22:00:00.000Z"
+      ]
+    },
+    "notes": [
+      "Attendance is seeded as explicit incidents over 10 school days; reports derive present counts from enrolled students and working school days.",
+      "Live messaging creates recipient notifications, so message-related unread counts should rise without extra seed-only notification writes."
+    ]
+  },
+  "section2": [
+    {
+      "actor": "Admin",
+      "action": "Login",
+      "status": "PASS",
+      "details": "School admin logged in successfully."
+    },
+    {
+      "actor": "Teacher",
+      "action": "Login",
+      "status": "PASS",
+      "details": "Teacher logged in successfully."
+    },
+    {
+      "actor": "Parent",
+      "action": "Login",
+      "status": "PASS",
+      "details": "Parent logged in successfully."
+    },
+    {
+      "actor": "Student",
+      "action": "Login",
+      "status": "PASS",
+      "details": "Student logged in successfully."
+    },
+    {
+      "actor": "Admin",
+      "action": "Create teacher",
+      "status": "PASS",
+      "details": "Created teacher 69e7d08e03fb5f57de609ae7."
+    },
+    {
+      "actor": "Admin",
+      "action": "Edit teacher",
+      "status": "PASS",
+      "details": "Updated teacher email to teacher-updated@qabasma.com."
+    },
+    {
+      "actor": "Admin",
+      "action": "Import students",
+      "status": "PASS",
+      "details": "Import endpoint responded with 200. imported=0, errors=1."
+    },
+    {
+      "actor": "Admin",
+      "action": "Reset password",
+      "status": "PASS",
+      "details": "Temporary password generated successfully."
+    },
+    {
+      "actor": "Admin",
+      "action": "Reset password verification",
+      "status": "PASS",
+      "details": "Reset teacher could log in with the generated temporary password."
+    },
+    {
+      "actor": "Platform",
+      "action": "Audit logs on login",
+      "status": "PASS",
+      "details": "Login audit logs increased from 0 to 6."
+    },
+    {
+      "actor": "Teacher",
+      "action": "Dashboard data available",
+      "status": "PASS",
+      "details": "Teacher dashboard API returned non-empty data."
+    },
+    {
+      "actor": "Teacher",
+      "action": "Record attendance",
+      "status": "PASS",
+      "details": "Created attendance record 69e7d08f03fb5f57de609b14."
+    },
+    {
+      "actor": "Socket",
+      "action": "Attendance notification room targeting",
+      "status": "PASS",
+      "details": "Parent received the attendance event and a control parent did not."
+    },
+    {
+      "actor": "Teacher",
+      "action": "Add behavior note",
+      "status": "PASS",
+      "details": "Created behavior record 69e7d09003fb5f57de609b22."
+    },
+    {
+      "actor": "Teacher",
+      "action": "Send message",
+      "status": "PASS",
+      "details": "Teacher sent message 69e7d09003fb5f57de609b3a."
+    },
+    {
+      "actor": "Socket",
+      "action": "Conversation room targeting",
+      "status": "PASS",
+      "details": "Parent received the live message update and a control parent did not."
+    },
+    {
+      "actor": "Parent",
+      "action": "Receive message notification",
+      "status": "PASS",
+      "details": "Live messaging created a notification for the recipient."
+    },
+    {
+      "actor": "Parent",
+      "action": "View child data",
+      "status": "PASS",
+      "details": "Parent can view child profile 69e7d08a03fb5f57de609585, attendance, and behavior records."
+    },
+    {
+      "actor": "Parent",
+      "action": "Receive notifications",
+      "status": "PASS",
+      "details": "Unread notifications increased from 4 to 7."
+    },
+    {
+      "actor": "Parent",
+      "action": "Send message",
+      "status": "PASS",
+      "details": "Parent sent message 69e7d09103fb5f57de609b6f."
+    },
+    {
+      "actor": "Student",
+      "action": "View own academic activity",
+      "status": "PASS",
+      "details": "Student profile 69e7d08a03fb5f57de609585 exposes self attendance and behavior records."
+    },
+    {
+      "actor": "Student",
+      "action": "View reports",
+      "status": "PASS",
+      "details": "Student report endpoint returned 200."
+    },
+    {
+      "actor": "Export",
+      "action": "Attendance CSV export",
+      "status": "PASS",
+      "details": "Attendance export returned CSV with a TOTAL row and the expected headers."
+    },
+    {
+      "actor": "Export",
+      "action": "Behavior CSV export",
+      "status": "PASS",
+      "details": "Behavior export returned CSV with the expected columns."
+    },
+    {
+      "actor": "Export",
+      "action": "PDF export",
+      "status": "PASS",
+      "details": "PDF export responded with application/pdf."
+    },
+    {
+      "actor": "Export",
+      "action": "Excel export",
+      "status": "PASS",
+      "details": "Excel export responded with application/vnd.openxmlformats-officedocument.spreadsheetml.sheet."
+    },
+    {
+      "actor": "Teacher",
+      "action": "List uploads",
+      "status": "PASS",
+      "details": "Upload listing returned 6 files for the teacher scope."
+    },
+    {
+      "actor": "Teacher",
+      "action": "Upload file",
+      "status": "PASS",
+      "details": "Uploaded file 69e7d09203fb5f57de609bec."
+    }
+  ],
+  "section3": [
+    {
+      "name": "Attendance report totals",
+      "status": "PASS",
+      "details": "Totals matched raw data. total=44, absence=12, late=22, permission=10, absencePct=27.27%."
+    },
+    {
+      "name": "Behavior report totals",
+      "status": "PASS",
+      "details": "Totals matched raw data. total=41, positive=20, negative=21, positivePct=48.78%."
+    },
+    {
+      "name": "Student report endpoint",
+      "status": "PASS",
+      "details": "Student report endpoint returned 200."
+    }
+  ],
+  "section4": [],
+  "section5": [],
+  "section6": [],
+  "section7": 100
+}

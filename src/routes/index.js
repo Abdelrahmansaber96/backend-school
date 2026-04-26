@@ -1,0 +1,40 @@
+const express = require('express');
+const router = express.Router();
+
+const authRoutes = require('./auth.routes');
+const userRoutes = require('./user.routes');
+const schoolRoutes = require('./school.routes');
+const teacherRoutes = require('./teacher.routes');
+const parentRoutes = require('./parent.routes');
+const studentRoutes = require('./student.routes');
+const classRoutes = require('./class.routes');
+const subjectRoutes = require('./subject.routes');
+const gradeRoutes = require('./grade.routes');
+const attendanceRoutes = require('./attendance.routes');
+const behaviorRoutes = require('./behavior.routes');
+const messagingRoutes = require('./messaging.routes');
+const notificationRoutes = require('./notification.routes');
+const reportRoutes = require('./report.routes');
+const auditLogRoutes = require('./auditLog.routes');
+const uploadRoutes = require('./upload.routes');
+const dashboardRoutes = require('./dashboard.routes');
+
+router.use('/auth', authRoutes);
+router.use('/users', userRoutes);
+router.use('/schools', schoolRoutes);
+router.use('/teachers', teacherRoutes);
+router.use('/parents', parentRoutes);
+router.use('/students', studentRoutes);
+router.use('/classes', classRoutes);
+router.use('/subjects', subjectRoutes);
+router.use('/grades', gradeRoutes);
+router.use('/attendance', attendanceRoutes);
+router.use('/behavior', behaviorRoutes);
+router.use('/messaging', messagingRoutes);
+router.use('/notifications', notificationRoutes);
+router.use('/reports', reportRoutes);
+router.use('/audit-logs', auditLogRoutes);
+router.use('/uploads', uploadRoutes);
+router.use('/dashboard', dashboardRoutes);
+
+module.exports = router;
