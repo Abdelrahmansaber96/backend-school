@@ -22,10 +22,20 @@ const parseDurationToMs = (value, fallback) => {
   return amount * multipliers[unit];
 };
 
+const resolveSameSite = () => {
+  const envValue = String(process.env.COOKIE_SAME_SITE || '').trim().toLowerCase();
+
+  if (['strict', 'lax', 'none'].includes(envValue)) {
+    return envValue;
+  }
+
+  return config.NODE_ENV === 'production' ? 'none' : 'lax';
+};
+
 const COOKIE_BASE_OPTS = {
   httpOnly: true,
   secure: config.NODE_ENV === 'production',
-  sameSite: 'lax',
+  sameSite: resolveSameSite(),
   path: '/',
 };
 
