@@ -12,7 +12,6 @@ const ApiError = require('./utils/ApiError');
 const ApiResponse = require('./utils/ApiResponse');
 const { globalLimiter } = require('./middlewares/rateLimiter.middleware');
 const errorHandler = require('./middlewares/errorHandler.middleware');
-const identifySchoolBySubdomain = require('./middlewares/subdomain.middleware');
 const routes = require('./routes/index');
 
 const app = express();
@@ -20,26 +19,21 @@ const app = express();
 // ─── Security ────────────────────────────────────────────────────────────────
 app.use(helmet());
 
-// Dynamic CORS: allow platform domain + all subdomains
-const allowedOriginPattern = new RegExp(
-  `^https?://([a-z0-9-]+\\.)?${config.PLATFORM_DOMAIN.replace('.', '\\.')}(:\\d+)?$`
-);
+// Dynamic CORS: allow the configured frontend origin
 app.use(cors({
   origin: (origin, callback) => {
-    // Allow requests with no origin (mobile apps, curl, server-to-server)
     if (!origin) return callback(null, true);
-    if (origin === config.FRONTEND_URL || allowedOriginPattern.test(origin)) {
+    if (origin === config.FRONTEND_URL) {
       return callback(null, true);
     }
-    // In development, also allow localhost variants
-    if (config.NODE_ENV !== 'production' && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
+    if (config.NODE_ENV !== 'production' && /^https?:\/\/(localhost|127\.0\.0\.1)(:\\d+)?$/.test(origin)) {
       return callback(null, true);
     }
     callback(null, false);
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-School-Subdomain'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 app.use(mongoSanitize()); // Prevent NoSQL injection
 
@@ -66,9 +60,6 @@ app.get('/health', (req, res) => {
     timestamp: new Date().toISOString(),
   }));
 });
-
-// ─── Subdomain Detection ─────────────────────────────────────────────────────
-app.use(identifySchoolBySubdomain);
 
 // ─── Local Uploads Fallback ──────────────────────────────────────────────────
 app.use('/local-uploads', express.static(path.resolve(__dirname, '..', config.LOCAL_UPLOADS_DIR)));

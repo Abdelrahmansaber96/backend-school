@@ -138,7 +138,6 @@ const registerSchool = asyncHandler(async (req, res) => {
       school: {
         _id: result.school._id,
         name: result.school.name,
-        subdomain: result.school.subdomain,
       },
     }, 'School registered successfully'),
   );

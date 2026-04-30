@@ -49,12 +49,12 @@ const deleteSchool = asyncHandler(async (req, res) => {
 });
 
 /**
- * GET /schools/current — resolve school from subdomain or user context (public-friendly)
+ * GET /schools/current — resolve school from authenticated user context when available
  */
 const getCurrentSchool = asyncHandler(async (req, res) => {
-  const contextId = req.school || (req.user && req.user.schoolId) || req.schoolIdFromSubdomain;
+  const contextId = req.user && req.user.schoolId;
   if (!contextId) {
-    // No school context (e.g. super_admin on bare domain or unauthenticated) — return null gracefully
+    // No school context (e.g. super_admin or unauthenticated public access) — return null gracefully
     return res.status(200).json(new ApiResponse(200, null, 'No school context'));
   }
   const school = await schoolService.getCurrentSchool(contextId);

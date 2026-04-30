@@ -6,6 +6,7 @@ const {
   getCurrentSchool, updateBranding,
 } = require('../controllers/school.controller');
 const authenticate = require('../middlewares/auth.middleware');
+const { authenticateOptional } = require('../middlewares/auth.middleware');
 const tenantMiddleware = require('../middlewares/tenant.middleware');
 const rbac = require('../middlewares/rbac.middleware');
 const validate = require('../middlewares/validate.middleware');
@@ -17,8 +18,8 @@ const {
   updateBrandingSchema,
 } = require('../validators/school.validator');
 
-// Public route — resolve current school from subdomain (no auth needed)
-router.get('/current', getCurrentSchool);
+// Public-friendly route — resolve current school from authenticated user when available
+router.get('/current', authenticateOptional, getCurrentSchool);
 
 // All routes below require authentication
 router.use(authenticate);

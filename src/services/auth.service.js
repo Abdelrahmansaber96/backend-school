@@ -13,6 +13,33 @@ const LOCK_LONG_MS = 60 * 60 * 1000;  // 1 hr
 
 const _hashToken = (token) => crypto.createHash('sha256').update(token).digest('hex');
 
+const normalizeSubdomainCandidate = (value) => String(value || '')
+  .trim()
+  .toLowerCase()
+  .replace(/[^a-z0-9]+/g, '-')
+  .replace(/^-+|-+$/g, '')
+  .slice(0, 63)
+  .replace(/-+$/g, '');
+
+const buildInternalSchoolSubdomain = async (schoolName, preferredSubdomain) => {
+  const preferredBase = normalizeSubdomainCandidate(preferredSubdomain);
+  const nameBase = normalizeSubdomainCandidate(schoolName);
+  const fallbackBase = `school-${crypto.randomBytes(3).toString('hex')}`;
+  const base = preferredBase || nameBase || fallbackBase;
+
+  let candidate = base;
+  let suffix = 1;
+
+  while (await School.exists({ subdomain: candidate, isDeleted: false })) {
+    const nextSuffix = `-${suffix}`;
+    const trimmedBase = base.slice(0, Math.max(1, 63 - nextSuffix.length)).replace(/-+$/g, '');
+    candidate = `${trimmedBase}${nextSuffix}`;
+    suffix += 1;
+  }
+
+  return candidate;
+};
+
 /**
  * Login with nationalId or phone
  */
@@ -151,17 +178,15 @@ const resetPassword = async (targetUserId, requesterRole, requesterSchoolId) => 
  * Public school owner registration: creates school + admin user atomically.
  */
 const registerSchool = async ({ schoolName, schoolNameAr, subdomain, address, phone, email, admin }) => {
-  // Normalise subdomain
-  const cleanSubdomain = subdomain.toLowerCase().trim();
-
-  // Check uniqueness
   const existingSchool = await School.findOne({
-    $or: [{ subdomain: cleanSubdomain }, { name: schoolName }],
+    name: schoolName,
     isDeleted: false,
   });
   if (existingSchool) {
-    throw new ApiError(409, 'School name or subdomain already taken');
+    throw new ApiError(409, 'School name already taken');
   }
+
+  const internalSubdomain = await buildInternalSchoolSubdomain(schoolName, subdomain);
 
   const existingUser = await User.findOne({
     $or: [{ nationalId: admin.nationalId }, ...(admin.phone ? [{ phone: admin.phone }] : [])],
@@ -174,7 +199,7 @@ const registerSchool = async ({ schoolName, schoolNameAr, subdomain, address, ph
   const school = await School.create({
     name: schoolName,
     nameAr: schoolNameAr || null,
-    subdomain: cleanSubdomain,
+    subdomain: internalSubdomain,
     address,
     phone,
     email: email || null,
