@@ -149,6 +149,7 @@ test('production login cookies are compatible with cross-site frontend requests'
   });
 
   assert.equal(res.statusCode, 200);
+  assert.equal(res.payload.data.accessToken, 'access-token');
   assert.equal(cookieCalls.length, 2);
 
   for (const { options } of cookieCalls) {
@@ -156,4 +157,51 @@ test('production login cookies are compatible with cross-site frontend requests'
     assert.equal(options.sameSite, 'none');
     assert.equal(options.httpOnly, true);
   }
+});
+
+test('refresh returns an access token in the response body for frontend session sync', async (t) => {
+  const originalRefreshTokens = authService.refreshTokens;
+  const { refresh } = require('../src/controllers/auth.controller');
+
+  authService.refreshTokens = async () => ({
+    accessToken: 'next-access-token',
+    refreshToken: 'next-refresh-token',
+  });
+
+  const cookieCalls = [];
+  const req = {
+    cookies: { refreshToken: 'incoming-refresh-token' },
+    body: {},
+  };
+  const res = {
+    statusCode: null,
+    payload: null,
+    cookie(name, value, options) {
+      cookieCalls.push({ name, value, options });
+      return this;
+    },
+    status(code) {
+      this.statusCode = code;
+      return this;
+    },
+    json(payload) {
+      this.payload = payload;
+      return this;
+    },
+  };
+
+  t.after(() => {
+    authService.refreshTokens = originalRefreshTokens;
+  });
+
+  await refresh(req, res, (error) => {
+    if (error) {
+      throw error;
+    }
+  });
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.payload.data.refreshed, true);
+  assert.equal(res.payload.data.accessToken, 'next-access-token');
+  assert.equal(cookieCalls.length, 2);
 });

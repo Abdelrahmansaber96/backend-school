@@ -64,7 +64,7 @@ const login = asyncHandler(async (req, res) => {
   res.cookie('refreshToken', result.refreshToken, REFRESH_COOKIE_OPTS);
 
   return res.status(200).json(
-    new ApiResponse(200, { user: result.user }, 'Login successful'),
+    new ApiResponse(200, { user: result.user, accessToken: result.accessToken }, 'Login successful'),
   );
 });
 
@@ -103,7 +103,9 @@ const refresh = asyncHandler(async (req, res) => {
   res.cookie('accessToken', result.accessToken, ACCESS_COOKIE_OPTS);
   res.cookie('refreshToken', result.refreshToken, REFRESH_COOKIE_OPTS);
 
-  return res.status(200).json(new ApiResponse(200, { refreshed: true }, 'Token refreshed'));
+  return res.status(200).json(
+    new ApiResponse(200, { refreshed: true, accessToken: result.accessToken }, 'Token refreshed'),
+  );
 });
 
 /**
