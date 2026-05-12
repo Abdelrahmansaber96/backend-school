@@ -1,6 +1,7 @@
 require('dotenv').config();
 
 const mongoose = require('mongoose');
+const { getCurrentHijriAcademicYear } = require('../src/utils/academicYear');
 
 const User = require('../src/models/User.model');
 const School = require('../src/models/School.model');
@@ -22,7 +23,7 @@ const behaviorService = require('../src/services/behavior.service');
 const messagingService = require('../src/services/messaging.service');
 
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/basma';
-const ACADEMIC_YEAR = '2025-2026';
+const ACADEMIC_YEAR = getCurrentHijriAcademicYear();
 
 const QA_SCHOOL = {
   name: 'مدرسة النخبة التجريبية',

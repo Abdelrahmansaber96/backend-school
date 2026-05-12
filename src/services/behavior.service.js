@@ -13,6 +13,7 @@ const {
   ensureTeacherStudentAccess,
 } = require('../utils/accessScope');
 const { assertRequesterRole } = require('../utils/authorization');
+const { getCurrentHijriAcademicYear } = require('../utils/academicYear');
 
 const linkUploadedFiles = async (attachments, schoolId, contextId) => {
   const fileIds = (attachments || [])
@@ -41,7 +42,7 @@ const resolveBehaviorTeacherId = async (classId, schoolId, requester = {}) => {
 };
 
 const listBehavior = async (query, schoolId, requester = {}) => {
-  assertRequesterRole(requester, ['super_admin', 'school_admin', 'teacher', 'parent', 'student']);
+  assertRequesterRole(requester, ['super_admin', 'school_admin', 'teacher', 'parent', 'student', 'administrative']);
 
   const { page, limit, skip } = getPagination(query);
   const sort = getSorting(query, ['createdAt']);
@@ -111,7 +112,7 @@ const listBehavior = async (query, schoolId, requester = {}) => {
 };
 
 const getBehaviorById = async (id, schoolId, requester = {}) => {
-  assertRequesterRole(requester, ['super_admin', 'school_admin', 'teacher', 'parent', 'student']);
+  assertRequesterRole(requester, ['super_admin', 'school_admin', 'teacher', 'parent', 'student', 'administrative']);
 
   const filter = { _id: id, schoolId, isDeleted: false };
 
@@ -139,7 +140,7 @@ const getBehaviorById = async (id, schoolId, requester = {}) => {
 };
 
 const createBehavior = async (data, schoolId, requester = {}) => {
-  assertRequesterRole(requester, ['school_admin', 'teacher']);
+  assertRequesterRole(requester, ['school_admin', 'teacher', 'administrative']);
 
   const { studentId, classId, type, category, description, attachments, notifyParent } = data;
   const normalizedCategory = category?.trim() || null;
@@ -154,7 +155,7 @@ const createBehavior = async (data, schoolId, requester = {}) => {
   const behavior = await Behavior.create({
     schoolId, studentId, teacherId, classId, type, category: normalizedCategory, description,
     attachments, notifyParent,
-    academicYear: new Date().getFullYear().toString(),
+    academicYear: getCurrentHijriAcademicYear(),
   });
 
   await linkUploadedFiles(attachments, schoolId, behavior._id);
@@ -182,7 +183,7 @@ const createBehavior = async (data, schoolId, requester = {}) => {
 };
 
 const updateBehavior = async (id, schoolId, requester = {}, updates) => {
-  assertRequesterRole(requester, ['school_admin', 'teacher']);
+  assertRequesterRole(requester, ['school_admin', 'teacher', 'administrative']);
 
   const record = await Behavior.findOne({ _id: id, schoolId, isDeleted: false });
   if (!record) throw new ApiError(404, 'Behavior record not found');
@@ -212,7 +213,7 @@ const updateBehavior = async (id, schoolId, requester = {}, updates) => {
 };
 
 const deleteBehavior = async (id, schoolId, requester = {}) => {
-  assertRequesterRole(requester, ['school_admin']);
+  assertRequesterRole(requester, ['school_admin', 'administrative']);
 
   const record = await Behavior.findOne({ _id: id, schoolId, isDeleted: false });
   if (!record) throw new ApiError(404, 'Behavior record not found');

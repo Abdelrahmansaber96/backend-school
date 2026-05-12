@@ -25,7 +25,7 @@ const getMyStudentProfile = asyncHandler(async (req, res) => {
 const createStudent = asyncHandler(async (req, res) => {
   const result = await studentService.createStudent(req.body, req.schoolId, getRequesterContext(req));
   return res.status(201).json(
-    new ApiResponse(201, { student: result.student, tempPassword: result.tempPassword }, 'Student created'),
+    new ApiResponse(201, { student: result.student }, 'Student created'),
   );
 });
 

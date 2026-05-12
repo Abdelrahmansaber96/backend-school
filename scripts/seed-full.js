@@ -6,10 +6,11 @@
 require('dotenv').config();
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
+const { getCurrentHijriAcademicYear } = require('../src/utils/academicYear');
 
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/basma';
 const BCRYPT_ROUNDS = parseInt(process.env.BCRYPT_ROUNDS, 10) || 10;
-const ACADEMIC_YEAR = '2025-2026';
+const ACADEMIC_YEAR = getCurrentHijriAcademicYear();
 
 // ─── Load models ─────────────────────────────────────────────────────────────
 const User       = require('../src/models/User.model');

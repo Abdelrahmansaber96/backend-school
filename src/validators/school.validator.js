@@ -1,4 +1,5 @@
 const Joi = require('joi');
+const { getCurrentHijriAcademicYear } = require('../utils/academicYear');
 
 const termSchema = Joi.object({
   name: Joi.string().required(),
@@ -50,7 +51,7 @@ const createSchoolSchema = {
     email: Joi.string().email().optional(),
     academicYear: Joi.string()
       .pattern(/^\d{4}-\d{4}$/)
-      .default('2025-2026'),
+      .default(() => getCurrentHijriAcademicYear()),
     administration: administrationSchema.optional(),
     admin: adminSchema.required(),
   }),

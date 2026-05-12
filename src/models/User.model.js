@@ -15,7 +15,7 @@ const userSchema = new mongoose.Schema(
     schoolId: { type: mongoose.Schema.Types.ObjectId, ref: 'School', default: null },
     role: {
       type: String,
-      enum: ['super_admin', 'school_admin', 'teacher', 'parent', 'student'],
+      enum: ['super_admin', 'school_admin', 'teacher', 'parent', 'student', 'administrative'],
       required: true,
     },
     nationalId: { type: String, required: true, unique: true, trim: true, maxlength: 20 },

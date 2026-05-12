@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { getCurrentHijriAcademicYear } = require('../utils/academicYear');
 
 const termSchema = new mongoose.Schema(
   {
@@ -77,7 +78,7 @@ const schoolSchema = new mongoose.Schema(
     email: { type: String, trim: true, lowercase: true, default: null },
     logo: { type: String, default: null },
     branding: { type: brandingSchema, default: () => ({}) },
-    academicYear: { type: String, required: true, default: '2025-2026' },
+    academicYear: { type: String, required: true, default: getCurrentHijriAcademicYear },
     terms: { type: [termSchema], default: [] },
     settings: { type: settingsSchema, default: () => ({}) },
     administration: { type: administrationSchema, default: () => ({}) },

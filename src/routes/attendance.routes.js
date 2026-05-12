@@ -15,11 +15,11 @@ const {
 
 router.use(authenticate, tenantMiddleware);
 
-router.get('/', rbac('super_admin', 'school_admin', 'teacher', 'parent', 'student'), getAttendance);
-router.post('/', rbac('school_admin', 'teacher'), validate(createAttendanceSchema), createAttendance);
-router.post('/bulk', rbac('school_admin', 'teacher'), validate(bulkAttendanceSchema), bulkCreateAttendance);
-router.get('/summary/:studentId', rbac('super_admin', 'school_admin', 'teacher', 'parent', 'student'), getStudentSummary);
-router.patch('/:id', rbac('school_admin', 'teacher'), validate(updateAttendanceSchema), updateAttendance);
-router.delete('/:id', rbac('school_admin'), deleteAttendance);
+router.get('/', rbac('super_admin', 'school_admin', 'teacher', 'parent', 'student', 'administrative'), getAttendance);
+router.post('/', rbac('school_admin', 'teacher', 'administrative'), validate(createAttendanceSchema), createAttendance);
+router.post('/bulk', rbac('school_admin', 'teacher', 'administrative'), validate(bulkAttendanceSchema), bulkCreateAttendance);
+router.get('/summary/:studentId', rbac('super_admin', 'school_admin', 'teacher', 'parent', 'student', 'administrative'), getStudentSummary);
+router.patch('/:id', rbac('school_admin', 'teacher', 'administrative'), validate(updateAttendanceSchema), updateAttendance);
+router.delete('/:id', rbac('school_admin', 'administrative'), deleteAttendance);
 
 module.exports = router;

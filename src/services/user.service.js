@@ -2,6 +2,8 @@ const User = require('../models/User.model');
 const ApiError = require('../utils/ApiError');
 const { getPagination, getSorting, buildPagination } = require('../utils/pagination');
 
+const buildAdministrativeTempPassword = (nationalId) => `Admin@${String(nationalId || '').slice(-4)}`;
+
 /**
  * Get the currently authenticated user's profile
  */
@@ -18,8 +20,8 @@ const listUsers = async (query, schoolId) => {
   const { page, limit, skip } = getPagination(query);
   const sort = getSorting(query, ['createdAt', 'name.first', 'role']);
 
-  const filter = { schoolId, isDeleted: false };
-  if (query.role) filter.role = query.role;
+  const filter = { schoolId, isDeleted: false, role: { $ne: 'student' } };
+  if (query.role && query.role !== 'student') filter.role = query.role;
   if (query.isActive !== undefined) filter.isActive = query.isActive === 'true';
   if (query.search) {
     filter.$or = [
@@ -110,4 +112,49 @@ const deleteUser = async (targetId, requesterRole, requesterSchoolId) => {
   await user.save({ validateBeforeSave: false });
 };
 
-module.exports = { getMe, listUsers, updateMe, getUserById, setActiveStatus, deleteUser };
+const createAdministrativeUser = async (data, schoolId, requester = {}) => {
+  if (requester.role !== 'school_admin') {
+    throw new ApiError(403, 'Forbidden');
+  }
+
+  const { name, nationalId, phone, email } = data;
+  const existingFilters = [
+    { nationalId },
+    { phone },
+    ...(email ? [{ email }] : []),
+  ];
+
+  const existingUser = await User.findOne({
+    isDeleted: false,
+    $or: existingFilters,
+  });
+
+  if (existingUser) {
+    throw new ApiError(409, 'National ID, phone, or email already in use');
+  }
+
+  const tempPassword = buildAdministrativeTempPassword(nationalId);
+
+  const user = await User.create({
+    schoolId,
+    role: 'administrative',
+    nationalId,
+    phone,
+    email: email || null,
+    password: tempPassword,
+    name,
+    mustChangePassword: true,
+  });
+
+  return { user, tempPassword };
+};
+
+module.exports = {
+  getMe,
+  listUsers,
+  updateMe,
+  getUserById,
+  setActiveStatus,
+  deleteUser,
+  createAdministrativeUser,
+};

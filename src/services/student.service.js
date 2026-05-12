@@ -18,6 +18,7 @@ const { assertRequesterRole } = require('../utils/authorization');
 const { toObjectId, toObjectIds, escapeRegex } = require('../utils/mongo');
 const auditLogger = require('../utils/auditLogger');
 const notificationService = require('./notification.service');
+const { generateTempPassword } = require('../utils/password');
 
 const IMPORT_SPECIAL_STATUS = new Set(['orphan', 'health_condition', 'learning_difficulty']);
 const OBJECT_ID_PATTERN = /^[a-f\d]{24}$/i;
@@ -57,14 +58,16 @@ const normalizeImportRow = ({ rowNumber, row }) => {
   Object.entries(row).forEach(([key, value]) => {
     const header = normalizeImportHeader(key);
 
-    if (['nationalid', 'studentnationalid'].includes(header)) normalized.nationalId = String(value || '').trim();
-    if (['firstname', 'studentfirstname', 'namefirst'].includes(header)) normalized.firstName = String(value || '').trim();
-    if (['lastname', 'studentlastname', 'namelast'].includes(header)) normalized.lastName = String(value || '').trim();
-    if (['phone', 'studentphone', 'mobilenumber'].includes(header)) normalized.phone = String(value || '').trim();
-    if (['classid', 'classname', 'class', 'classcode'].includes(header)) normalized.classRef = String(value || '').trim();
-    if (['parentid', 'parentnationalid', 'parentnationalnumber', 'parent'].includes(header)) normalized.parentRef = String(value || '').trim();
-    if (['gender', 'sex'].includes(header)) normalized.gender = String(value || '').trim().toLowerCase();
-    if (['dateofbirth', 'dob', 'birthdate'].includes(header)) normalized.dateOfBirth = value;
+    if (['nationalid', 'studentnationalid', 'nationalnumber', 'رقمالهوية', 'الهوية', 'هويةالطالب'].includes(header)) normalized.nationalId = String(value || '').trim();
+    if (['firstname', 'studentfirstname', 'namefirst', 'الاسمالاول', 'اسمالاول'].includes(header)) normalized.firstName = String(value || '').trim();
+    if (['lastname', 'studentlastname', 'namelast', 'اسمالعائلة', 'الاسمالاخير'].includes(header)) normalized.lastName = String(value || '').trim();
+    if (['fullname', 'name', 'studentname', 'studentfullname', 'الاسم', 'اسمالطالب', 'اسمكامل'].includes(header)) normalized.fullName = String(value || '').trim();
+    if (['phone', 'studentphone', 'mobilenumber', 'الجوال', 'رقمالجوال', 'هاتف'].includes(header)) normalized.phone = String(value || '').trim();
+    if (['classid', 'classname', 'class', 'classcode', 'الفصل', 'اسمالفصل', 'الفصلالدراسي'].includes(header)) normalized.classRef = String(value || '').trim();
+    if (['grade', 'stage', 'الصف', 'المرحلة'].includes(header)) normalized.gradeRef = String(value || '').trim();
+    if (['parentid', 'parentnationalid', 'parentnationalnumber', 'parent', 'هويةوليالامر', 'وليالامر'].includes(header)) normalized.parentRef = String(value || '').trim();
+    if (['gender', 'sex', 'الجنس'].includes(header)) normalized.gender = String(value || '').trim().toLowerCase();
+    if (['dateofbirth', 'dob', 'birthdate', 'تاريخالميلاد'].includes(header)) normalized.dateOfBirth = value;
     if (['healthstatus', 'medicalnotes'].includes(header)) normalized.healthStatus = String(value || '').trim();
     if (['specialstatus', 'specialstatuses'].includes(header)) normalized.specialStatus = value;
   });
@@ -95,6 +98,34 @@ const parseDateValue = (value) => {
 };
 
 const buildImportError = (rowNumber, message, row) => ({ row: rowNumber, message, data: row });
+
+const splitImportedName = (fullName) => {
+  const parts = String(fullName || '').trim().split(/\s+/).filter(Boolean);
+
+  if (!parts.length) {
+    return { first: '', last: '' };
+  }
+
+  if (parts.length === 1) {
+    return { first: parts[0], last: parts[0] };
+  }
+
+  return {
+    first: parts[0],
+    last: parts.slice(1).join(' '),
+  };
+};
+
+const resolveImportedStudentName = (row) => {
+  const first = String(row.firstName || '').trim();
+  const last = String(row.lastName || '').trim();
+
+  if (first || last) {
+    return { first, last };
+  }
+
+  return splitImportedName(row.fullName);
+};
 
 const buildLookupStages = (from, localField, as, project) => [
   {
@@ -302,28 +333,34 @@ const createStudent = async (data, schoolId, requester = {}) => {
   const existing = await User.findOne({ $or: [{ nationalId }, { phone }], isDeleted: false });
   if (existing) throw new ApiError(409, 'National ID or phone already in use');
 
-  const [parent, cls] = await Promise.all([
-    ensureSchoolReference(Parent, parentId, schoolId, 'Parent'),
+  const [parent] = await Promise.all([
+    parentId ? ensureSchoolReference(Parent, parentId, schoolId, 'Parent') : Promise.resolve(null),
     ensureSchoolReference(Class, classId, schoolId, 'Class'),
   ]);
 
-  const tempPassword = `Student@${nationalId.slice(-4)}`;
+  const hiddenPassword = generateTempPassword();
 
   const user = await User.create({
     schoolId, role: 'student', nationalId, phone,
-    password: tempPassword,
+    password: hiddenPassword,
     name, mustChangePassword: false, // students usually don't change passwords
   });
 
   const student = await Student.create({
-    userId: user._id, schoolId, nationalId, classId, parentId, gender,
+    userId: user._id,
+    schoolId,
+    nationalId,
+    classId,
+    parentId: parent?._id ?? null,
+    gender: gender || 'unspecified',
     dateOfBirth, healthStatus, specialStatus,
   });
 
-  // Add student to parent's children list
-  await Parent.findByIdAndUpdate(parent._id, { $addToSet: { children: student._id } });
+  if (parent) {
+    await Parent.findByIdAndUpdate(parent._id, { $addToSet: { children: student._id } });
+  }
 
-  return { student, tempPassword };
+  return { student };
 };
 
 const importStudents = async (file, schoolId, requester = {}) => {
@@ -339,12 +376,18 @@ const importStudents = async (file, schoolId, requester = {}) => {
   }
 
   const [classes, parents] = await Promise.all([
-    Class.find({ schoolId, isDeleted: false }).select('_id name').lean(),
+    Class.find({ schoolId, isDeleted: false }).select('_id name grade').lean(),
     Parent.find({ schoolId, isDeleted: false }).select('_id nationalId').lean(),
   ]);
 
   const classesById = new Map(classes.map((item) => [String(item._id), item]));
   const classesByName = new Map(classes.map((item) => [normalizeLookupValue(item.name), item]));
+  const classesByNameAndGrade = new Map(
+    classes.map((item) => [
+      `${normalizeLookupValue(item.name)}::${normalizeLookupValue(item.grade)}`,
+      item,
+    ]),
+  );
   const parentsById = new Map(parents.map((item) => [String(item._id), item]));
   const parentsByNationalId = new Map(parents.map((item) => [String(item.nationalId), item]));
 
@@ -370,14 +413,16 @@ const importStudents = async (file, schoolId, requester = {}) => {
 
   for (const row of normalizedRows) {
     const rowErrors = [];
+    const importedName = resolveImportedStudentName(row);
 
     if (!row.nationalId) rowErrors.push('nationalId is required');
-    if (!row.firstName) rowErrors.push('firstName is required');
-    if (!row.lastName) rowErrors.push('lastName is required');
+    if (!importedName.first) rowErrors.push('student name is required');
+    if (!importedName.last) rowErrors.push('student name is incomplete');
     if (!row.phone) rowErrors.push('phone is required');
     if (!row.classRef) rowErrors.push('classId or class name is required');
-    if (!row.parentRef) rowErrors.push('parentId or parentNationalId is required');
-    if (!['male', 'female'].includes(row.gender)) rowErrors.push('gender must be male or female');
+    if (row.gender && !['male', 'female', 'unspecified'].includes(row.gender)) {
+      rowErrors.push('gender must be male, female, or unspecified');
+    }
 
     const parsedDate = parseDateValue(row.dateOfBirth);
     if (row.dateOfBirth && !parsedDate) rowErrors.push('dateOfBirth is invalid');
@@ -390,14 +435,18 @@ const importStudents = async (file, schoolId, requester = {}) => {
     const classRef = row.classRef || '';
     const resolvedClass = OBJECT_ID_PATTERN.test(classRef)
       ? classesById.get(classRef)
-      : classesByName.get(normalizeLookupValue(classRef));
+      : (row.gradeRef
+        ? classesByNameAndGrade.get(`${normalizeLookupValue(classRef)}::${normalizeLookupValue(row.gradeRef)}`)
+        : classesByName.get(normalizeLookupValue(classRef)));
     if (!resolvedClass) rowErrors.push(`class ${classRef || '—'} was not found in this school`);
 
     const parentRef = row.parentRef || '';
-    const resolvedParent = OBJECT_ID_PATTERN.test(parentRef)
-      ? parentsById.get(parentRef)
-      : parentsByNationalId.get(parentRef);
-    if (!resolvedParent) rowErrors.push(`parent ${parentRef || '—'} was not found in this school`);
+    const resolvedParent = parentRef
+      ? (OBJECT_ID_PATTERN.test(parentRef)
+        ? parentsById.get(parentRef)
+        : parentsByNationalId.get(parentRef))
+      : null;
+    if (parentRef && !resolvedParent) rowErrors.push(`parent ${parentRef || '—'} was not found in this school`);
 
     if (fileNationalIds.has(row.nationalId)) rowErrors.push('nationalId is duplicated inside the import file');
     if (filePhones.has(row.phone)) rowErrors.push('phone is duplicated inside the import file');
@@ -412,11 +461,11 @@ const importStudents = async (file, schoolId, requester = {}) => {
     try {
       const result = await createStudent({
         nationalId: row.nationalId,
-        name: { first: row.firstName, last: row.lastName },
+        name: importedName,
         phone: row.phone,
         classId: resolvedClass._id,
-        parentId: resolvedParent._id,
-        gender: row.gender,
+        parentId: resolvedParent?._id,
+        gender: row.gender || 'unspecified',
         dateOfBirth: parsedDate,
         healthStatus: row.healthStatus || null,
         specialStatus: specialStatus.values,
@@ -426,7 +475,6 @@ const importStudents = async (file, schoolId, requester = {}) => {
         row: row.rowNumber,
         studentId: String(result.student._id),
         nationalId: row.nationalId,
-        temporaryPassword: result.tempPassword,
       });
 
       fileNationalIds.add(row.nationalId);
@@ -498,14 +546,14 @@ const updateStudent = async (studentId, schoolId, updates, requester = {}) => {
   if (specialStatus !== undefined) studentUpdates.specialStatus = specialStatus;
   if (isActive !== undefined) studentUpdates.isActive = isActive;
 
-  const previousParentId = String(student.parentId);
+  const previousParentId = student.parentId ? String(student.parentId) : null;
 
   Object.assign(student, studentUpdates);
   await student.save();
 
   if (parentId && previousParentId !== String(parentId)) {
     await Promise.all([
-      Parent.findByIdAndUpdate(previousParentId, { $pull: { children: student._id } }),
+      previousParentId ? Parent.findByIdAndUpdate(previousParentId, { $pull: { children: student._id } }) : Promise.resolve(),
       Parent.findByIdAndUpdate(parentId, { $addToSet: { children: student._id } }),
     ]);
   }
@@ -524,7 +572,9 @@ const deleteStudent = async (studentId, schoolId, requester = {}) => {
   await student.save({ validateBeforeSave: false });
 
   await User.findByIdAndUpdate(student.userId, { isDeleted: true, deletedAt: new Date(), isActive: false });
-  await Parent.findByIdAndUpdate(student.parentId, { $pull: { children: student._id } });
+  if (student.parentId) {
+    await Parent.findByIdAndUpdate(student.parentId, { $pull: { children: student._id } });
+  }
 };
 
 module.exports = {

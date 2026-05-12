@@ -18,6 +18,7 @@ const { assertRequesterRole } = require('../utils/authorization');
 const { queueSocketEvent } = require('../sockets/socket.emitter');
 const { socketRooms, SOCKET_EVENTS } = require('../sockets/socket.contract');
 const { toObjectId, toObjectIdMatch } = require('../utils/mongo');
+const { getCurrentHijriAcademicYear } = require('../utils/academicYear');
 
 const EMPTY_ATTENDANCE_SUMMARY = { total: 0, absence: 0, late: 0, permission: 0 };
 
@@ -191,7 +192,7 @@ const scheduleAttendanceCreatedEvents = (records, schoolId) => {
  * Create a single attendance record
  */
 const createAttendance = async (data, schoolId, requester = {}) => {
-  assertRequesterRole(requester, ['school_admin', 'teacher']);
+  assertRequesterRole(requester, ['school_admin', 'teacher', 'administrative']);
 
   const { studentId, classId, type, date, notes } = data;
 
@@ -207,7 +208,7 @@ const createAttendance = async (data, schoolId, requester = {}) => {
 
   const record = await Attendance.create({
     schoolId, studentId, classId, teacherId, type, date: new Date(date), notes,
-    academicYear: new Date(date).getFullYear(),
+    academicYear: getCurrentHijriAcademicYear(new Date(date)),
   });
 
   scheduleAttendanceCreatedEvents(record, schoolId);
@@ -218,7 +219,7 @@ const createAttendance = async (data, schoolId, requester = {}) => {
  * Bulk-create attendance for an entire class on one date
  */
 const bulkCreateAttendance = async (payload, schoolId, requester = {}) => {
-  assertRequesterRole(requester, ['school_admin', 'teacher']);
+  assertRequesterRole(requester, ['school_admin', 'teacher', 'administrative']);
 
   const { classId, date } = payload;
   const attendanceDate = new Date(date);
@@ -243,7 +244,7 @@ const bulkCreateAttendance = async (payload, schoolId, requester = {}) => {
 
   const docs = normalizedRecords.map(({ studentId, type, notes }) => ({
     schoolId, studentId, classId, teacherId, type, date: attendanceDate,
-    notes, academicYear: attendanceDate.getFullYear(),
+    notes, academicYear: getCurrentHijriAcademicYear(attendanceDate),
   }));
 
   const records = await Attendance.insertMany(docs, { ordered: false });
@@ -255,7 +256,7 @@ const bulkCreateAttendance = async (payload, schoolId, requester = {}) => {
  * Update a single attendance record
  */
 const updateAttendance = async (attendanceId, updates, schoolId, requester = {}) => {
-  assertRequesterRole(requester, ['school_admin', 'teacher']);
+  assertRequesterRole(requester, ['school_admin', 'teacher', 'administrative']);
 
   const record = await Attendance.findOne({ _id: attendanceId, schoolId, isDeleted: false });
   if (!record) throw new ApiError(404, 'Attendance record not found');
@@ -277,7 +278,7 @@ const updateAttendance = async (attendanceId, updates, schoolId, requester = {})
  * Soft-delete a single attendance record
  */
 const deleteAttendance = async (attendanceId, schoolId, requester = {}) => {
-  assertRequesterRole(requester, ['school_admin']);
+  assertRequesterRole(requester, ['school_admin', 'administrative']);
 
   const record = await Attendance.findOneAndUpdate(
     { _id: attendanceId, schoolId, isDeleted: false },
@@ -290,7 +291,7 @@ const deleteAttendance = async (attendanceId, schoolId, requester = {}) => {
  * Get attendance records with optional filters
  */
 const getAttendance = async (query, schoolId, requester = {}) => {
-  assertRequesterRole(requester, ['super_admin', 'school_admin', 'teacher', 'parent', 'student']);
+  assertRequesterRole(requester, ['super_admin', 'school_admin', 'teacher', 'parent', 'student', 'administrative']);
 
   const { page, limit, skip } = getPagination(query);
   const sort = getSorting(query, ['date', 'createdAt', 'type'], 'date');
@@ -331,7 +332,7 @@ const getAttendance = async (query, schoolId, requester = {}) => {
  * Summarize attendance stats for a student in a date range
  */
 const getStudentSummary = async (studentId, schoolId, { startDate, endDate, academicYear }, requester = {}) => {
-  assertRequesterRole(requester, ['super_admin', 'school_admin', 'teacher', 'parent', 'student']);
+  assertRequesterRole(requester, ['super_admin', 'school_admin', 'teacher', 'parent', 'student', 'administrative']);
 
   const filter = { schoolId, studentId, isDeleted: false };
 

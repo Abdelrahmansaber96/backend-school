@@ -24,6 +24,11 @@ const createTeacher = asyncHandler(async (req, res) => {
   );
 });
 
+const importTeachers = asyncHandler(async (req, res) => {
+  const result = await teacherService.importTeachers(req.file, req.schoolId, getRequesterContext(req));
+  return res.status(200).json(new ApiResponse(200, result, 'Teacher import completed'));
+});
+
 const updateTeacher = asyncHandler(async (req, res) => {
   const teacher = await teacherService.updateTeacher(req.params.id, req.schoolId, req.body, getRequesterContext(req));
   return res.status(200).json(new ApiResponse(200, teacher, 'Teacher updated'));
@@ -34,4 +39,11 @@ const deleteTeacher = asyncHandler(async (req, res) => {
   return res.status(200).json(new ApiResponse(200, null, 'Teacher deleted'));
 });
 
-module.exports = { listTeachers, getTeacherById, createTeacher, updateTeacher, deleteTeacher };
+module.exports = {
+  listTeachers,
+  getTeacherById,
+  createTeacher,
+  importTeachers,
+  updateTeacher,
+  deleteTeacher,
+};

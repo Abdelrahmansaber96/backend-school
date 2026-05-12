@@ -2,6 +2,11 @@ const asyncHandler = require('../utils/asyncHandler');
 const ApiResponse = require('../utils/ApiResponse');
 const userService = require('../services/user.service');
 
+const getRequesterContext = (req) => ({
+  role: req.user.role,
+  userId: req.user._id,
+});
+
 const getMe = asyncHandler(async (req, res) => {
   const user = await userService.getMe(req.user._id);
   return res.status(200).json(new ApiResponse(200, user, 'Profile fetched'));
@@ -49,4 +54,20 @@ const deleteUser = asyncHandler(async (req, res) => {
   return res.status(200).json(new ApiResponse(200, null, 'User deleted'));
 });
 
-module.exports = { getMe, updateMe, listUsers, getUserById, activateUser, deactivateUser, deleteUser };
+const createAdministrativeUser = asyncHandler(async (req, res) => {
+  const result = await userService.createAdministrativeUser(req.body, req.schoolId, getRequesterContext(req));
+  return res.status(201).json(
+    new ApiResponse(201, { user: result.user, tempPassword: result.tempPassword }, 'Administrative user created'),
+  );
+});
+
+module.exports = {
+  getMe,
+  updateMe,
+  listUsers,
+  getUserById,
+  activateUser,
+  deactivateUser,
+  deleteUser,
+  createAdministrativeUser,
+};

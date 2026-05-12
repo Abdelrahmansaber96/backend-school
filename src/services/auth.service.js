@@ -6,6 +6,7 @@ const ApiError = require('../utils/ApiError');
 const { generateAccessToken, generateRefreshToken, verifyRefreshToken } = require('../utils/jwt');
 const { hashPassword } = require('../utils/password');
 const auditLogger = require('../utils/auditLogger');
+const { getCurrentHijriAcademicYear } = require('../utils/academicYear');
 
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCK_SHORT_MS = 15 * 60 * 1000; // 15 min
@@ -53,6 +54,10 @@ const login = async ({ identifier, password, identifierType = 'nationalId' }, ip
   if (!user) throw new ApiError(401, 'Invalid credentials', 'INVALID_CREDENTIALS');
 
   if (!user.isActive) throw new ApiError(403, 'Account is deactivated', 'ACCOUNT_INACTIVE');
+
+  if (user.role === 'student') {
+    throw new ApiError(403, 'Student accounts are disabled', 'ACCOUNT_DISABLED');
+  }
 
   if (user.isLocked()) {
     throw new ApiError(423, `Account locked until ${user.lockedUntil.toISOString()}`, 'ACCOUNT_LOCKED');
@@ -203,7 +208,7 @@ const registerSchool = async ({ schoolName, schoolNameAr, subdomain, address, ph
     address,
     phone,
     email: email || null,
-    academicYear: '2025-2026',
+    academicYear: getCurrentHijriAcademicYear(),
   });
 
   try {

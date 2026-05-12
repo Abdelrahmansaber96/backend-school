@@ -6,9 +6,9 @@ const studentSchema = new mongoose.Schema(
     schoolId: { type: mongoose.Schema.Types.ObjectId, ref: 'School', required: true },
     nationalId: { type: String, required: true, trim: true },
     classId: { type: mongoose.Schema.Types.ObjectId, ref: 'Class', required: true },
-    parentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Parent', required: true },
+    parentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Parent', default: null },
     dateOfBirth: { type: Date, default: null },
-    gender: { type: String, enum: ['male', 'female'], required: true },
+    gender: { type: String, enum: ['male', 'female', 'unspecified'], default: 'unspecified' },
     healthStatus: { type: String, trim: true, default: null },
     specialStatus: {
       type: [String],

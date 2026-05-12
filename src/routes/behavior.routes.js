@@ -12,10 +12,10 @@ const { createBehaviorSchema, updateBehaviorSchema } = require('../validators/be
 
 router.use(authenticate, tenantMiddleware);
 
-router.get('/', rbac('super_admin', 'school_admin', 'teacher', 'parent', 'student'), listBehavior);
-router.post('/', rbac('school_admin', 'teacher'), validate(createBehaviorSchema), createBehavior);
-router.get('/:id', rbac('super_admin', 'school_admin', 'teacher', 'parent', 'student'), getBehaviorById);
-router.patch('/:id', rbac('school_admin', 'teacher'), validate(updateBehaviorSchema), updateBehavior);
-router.delete('/:id', rbac('school_admin'), deleteBehavior);
+router.get('/', rbac('super_admin', 'school_admin', 'teacher', 'parent', 'student', 'administrative'), listBehavior);
+router.post('/', rbac('school_admin', 'teacher', 'administrative'), validate(createBehaviorSchema), createBehavior);
+router.get('/:id', rbac('super_admin', 'school_admin', 'teacher', 'parent', 'student', 'administrative'), getBehaviorById);
+router.patch('/:id', rbac('school_admin', 'teacher', 'administrative'), validate(updateBehaviorSchema), updateBehavior);
+router.delete('/:id', rbac('school_admin', 'administrative'), deleteBehavior);
 
 module.exports = router;
