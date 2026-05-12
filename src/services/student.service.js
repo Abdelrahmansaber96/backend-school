@@ -22,16 +22,133 @@ const { generateTempPassword } = require('../utils/password');
 
 const IMPORT_SPECIAL_STATUS = new Set(['orphan', 'health_condition', 'learning_difficulty']);
 const OBJECT_ID_PATTERN = /^[a-f\d]{24}$/i;
+const ARABIC_INDIC_DIGITS = {
+  '٠': '0',
+  '١': '1',
+  '٢': '2',
+  '٣': '3',
+  '٤': '4',
+  '٥': '5',
+  '٦': '6',
+  '٧': '7',
+  '٨': '8',
+  '٩': '9',
+};
+const GRADE_ALIAS_MAP = new Map([
+  ['اول', '1'],
+  ['الاول', '1'],
+  ['first', '1'],
+  ['ثاني', '2'],
+  ['الثاني', '2'],
+  ['second', '2'],
+  ['ثالث', '3'],
+  ['الثالث', '3'],
+  ['third', '3'],
+  ['رابع', '4'],
+  ['الرابع', '4'],
+  ['fourth', '4'],
+  ['خامس', '5'],
+  ['الخامس', '5'],
+  ['fifth', '5'],
+  ['سادس', '6'],
+  ['السادس', '6'],
+  ['sixth', '6'],
+  ['سابع', '7'],
+  ['السابع', '7'],
+  ['seventh', '7'],
+  ['ثامن', '8'],
+  ['الثامن', '8'],
+  ['eighth', '8'],
+  ['تاسع', '9'],
+  ['التاسع', '9'],
+  ['ninth', '9'],
+  ['عاشر', '10'],
+  ['العاشر', '10'],
+  ['tenth', '10'],
+]);
+const SECTION_ALIAS_MAP = new Map([
+  ['ا', 'a'],
+  ['الف', 'a'],
+  ['a', 'a'],
+  ['ب', 'b'],
+  ['باء', 'b'],
+  ['b', 'b'],
+  ['ج', 'c'],
+  ['جيم', 'c'],
+  ['c', 'c'],
+  ['د', 'd'],
+  ['دال', 'd'],
+  ['d', 'd'],
+  ['ه', 'e'],
+  ['هـ', 'e'],
+  ['e', 'e'],
+  ['و', 'f'],
+  ['واو', 'f'],
+  ['f', 'f'],
+]);
+
+const normalizeArabicDigits = (value) => String(value || '').replace(/[٠-٩]/g, (digit) => ARABIC_INDIC_DIGITS[digit] || digit);
 
 const normalizeImportHeader = (value) => String(value || '')
   .trim()
   .toLowerCase()
   .replace(/[\s._-]+/g, '');
 
-const normalizeLookupValue = (value) => String(value || '')
+const normalizeLookupValue = (value) => normalizeArabicDigits(value)
   .trim()
   .toLowerCase()
-  .replace(/[\s_-]+/g, '');
+  .replace(/[أإآ]/g, 'ا')
+  .replace(/ى/g, 'ي')
+  .replace(/[\s_\-/()]+/g, '');
+
+const normalizeGradeValue = (value) => {
+  const normalized = normalizeLookupValue(value);
+  if (!normalized) return '';
+
+  const alias = GRADE_ALIAS_MAP.get(normalized);
+  if (alias) return alias;
+
+  const digitMatch = normalized.match(/\d+/);
+  if (digitMatch) {
+    return String(Number.parseInt(digitMatch[0], 10));
+  }
+
+  return normalized;
+};
+
+const normalizeSectionValue = (value) => {
+  const normalized = normalizeLookupValue(value);
+  if (!normalized) return '';
+  return SECTION_ALIAS_MAP.get(normalized) || normalized;
+};
+
+const findClassForImportRow = (classes, row) => {
+  const classRef = row.classRef || '';
+  if (!classRef) return null;
+
+  const rowClassKey = normalizeLookupValue(classRef);
+  const rowGradeKey = normalizeGradeValue(row.gradeRef);
+  const rowSectionKey = normalizeSectionValue(classRef);
+
+  return classes.find((item) => {
+    const itemNameKey = normalizeLookupValue(item.name);
+    const itemGradeKey = normalizeGradeValue(item.grade);
+    const itemSectionKey = normalizeSectionValue(item.section);
+    const gradeMatches = !rowGradeKey || !itemGradeKey || itemGradeKey === rowGradeKey;
+
+    if (gradeMatches && itemNameKey === rowClassKey) return true;
+    if (gradeMatches && rowSectionKey && itemSectionKey && itemSectionKey === rowSectionKey) return true;
+    if (rowGradeKey && rowSectionKey && itemGradeKey === rowGradeKey && itemNameKey.endsWith(normalizeLookupValue(classRef))) return true;
+    if (rowGradeKey && rowSectionKey && itemGradeKey === rowGradeKey && itemSectionKey === rowSectionKey) return true;
+    if (rowGradeKey && rowClassKey) {
+      const rowComposite = normalizeLookupValue(`${rowGradeKey}${classRef}`);
+      if (normalizeLookupValue(`${itemGradeKey}${itemSectionKey || ''}`) === rowComposite) return true;
+      if (normalizeLookupValue(`${itemGradeKey}${itemNameKey}`) === rowComposite) return true;
+    }
+
+    return false;
+  }) || null;
+};
 
 const extractImportRows = (file) => {
   const workbook = XLSX.read(file.buffer, { type: 'buffer', cellDates: true, raw: false });
@@ -381,13 +498,6 @@ const importStudents = async (file, schoolId, requester = {}) => {
   ]);
 
   const classesById = new Map(classes.map((item) => [String(item._id), item]));
-  const classesByName = new Map(classes.map((item) => [normalizeLookupValue(item.name), item]));
-  const classesByNameAndGrade = new Map(
-    classes.map((item) => [
-      `${normalizeLookupValue(item.name)}::${normalizeLookupValue(item.grade)}`,
-      item,
-    ]),
-  );
   const parentsById = new Map(parents.map((item) => [String(item._id), item]));
   const parentsByNationalId = new Map(parents.map((item) => [String(item.nationalId), item]));
 
@@ -435,9 +545,7 @@ const importStudents = async (file, schoolId, requester = {}) => {
     const classRef = row.classRef || '';
     const resolvedClass = OBJECT_ID_PATTERN.test(classRef)
       ? classesById.get(classRef)
-      : (row.gradeRef
-        ? classesByNameAndGrade.get(`${normalizeLookupValue(classRef)}::${normalizeLookupValue(row.gradeRef)}`)
-        : classesByName.get(normalizeLookupValue(classRef)));
+      : findClassForImportRow(classes, row);
     if (!resolvedClass) rowErrors.push(`class ${classRef || '—'} was not found in this school`);
 
     const parentRef = row.parentRef || '';
@@ -585,4 +693,10 @@ module.exports = {
   importStudents,
   updateStudent,
   deleteStudent,
+  __testables: {
+    normalizeLookupValue,
+    normalizeGradeValue,
+    normalizeSectionValue,
+    findClassForImportRow,
+  },
 };
