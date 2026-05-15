@@ -632,6 +632,7 @@ const updateStudent = async (studentId, schoolId, updates, requester = {}) => {
   if (!student) throw new ApiError(404, 'Student not found');
 
   const { name, phone, classId, parentId, gender, dateOfBirth, healthStatus, specialStatus, isActive } = updates;
+  const hasOwn = (field) => Object.prototype.hasOwnProperty.call(updates, field);
 
   if (name || phone) {
     await User.findByIdAndUpdate(student.userId, {
@@ -640,29 +641,32 @@ const updateStudent = async (studentId, schoolId, updates, requester = {}) => {
   }
 
   const studentUpdates = {};
-  if (classId) {
+  if (hasOwn('classId') && classId) {
     await ensureSchoolReference(Class, classId, schoolId, 'Class');
     studentUpdates.classId = classId;
   }
-  if (parentId) {
-    await ensureSchoolReference(Parent, parentId, schoolId, 'Parent');
-    studentUpdates.parentId = parentId;
+  if (hasOwn('parentId')) {
+    if (parentId) {
+      await ensureSchoolReference(Parent, parentId, schoolId, 'Parent');
+    }
+    studentUpdates.parentId = parentId || null;
   }
-  if (gender) studentUpdates.gender = gender;
-  if (dateOfBirth) studentUpdates.dateOfBirth = dateOfBirth;
-  if (healthStatus !== undefined) studentUpdates.healthStatus = healthStatus;
+  if (hasOwn('gender')) studentUpdates.gender = gender;
+  if (hasOwn('dateOfBirth')) studentUpdates.dateOfBirth = dateOfBirth || null;
+  if (hasOwn('healthStatus')) studentUpdates.healthStatus = healthStatus;
   if (specialStatus !== undefined) studentUpdates.specialStatus = specialStatus;
   if (isActive !== undefined) studentUpdates.isActive = isActive;
 
   const previousParentId = student.parentId ? String(student.parentId) : null;
+  const nextParentId = hasOwn('parentId') ? (parentId ? String(parentId) : null) : previousParentId;
 
   Object.assign(student, studentUpdates);
   await student.save();
 
-  if (parentId && previousParentId !== String(parentId)) {
+  if (previousParentId !== nextParentId) {
     await Promise.all([
       previousParentId ? Parent.findByIdAndUpdate(previousParentId, { $pull: { children: student._id } }) : Promise.resolve(),
-      Parent.findByIdAndUpdate(parentId, { $addToSet: { children: student._id } }),
+      nextParentId ? Parent.findByIdAndUpdate(nextParentId, { $addToSet: { children: student._id } }) : Promise.resolve(),
     ]);
   }
 
