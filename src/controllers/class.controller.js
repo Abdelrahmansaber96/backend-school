@@ -22,6 +22,11 @@ const createClass = asyncHandler(async (req, res) => {
   return res.status(201).json(new ApiResponse(201, cls, 'Class created'));
 });
 
+const importClasses = asyncHandler(async (req, res) => {
+  const result = await classService.importClasses(req.file, req.schoolId, getRequesterContext(req));
+  return res.status(200).json(new ApiResponse(200, result, 'Class import completed'));
+});
+
 const updateClass = asyncHandler(async (req, res) => {
   const cls = await classService.updateClass(req.params.id, req.schoolId, req.body, getRequesterContext(req));
   return res.status(200).json(new ApiResponse(200, cls, 'Class updated'));
@@ -37,4 +42,12 @@ const getClassStudents = asyncHandler(async (req, res) => {
   return res.status(200).json(new ApiResponse(200, result.data, 'Class students fetched', result.meta));
 });
 
-module.exports = { listClasses, getClassById, createClass, updateClass, deleteClass, getClassStudents };
+module.exports = {
+  listClasses,
+  getClassById,
+  createClass,
+  importClasses,
+  updateClass,
+  deleteClass,
+  getClassStudents,
+};
