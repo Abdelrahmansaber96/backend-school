@@ -47,6 +47,14 @@ const resolveAttendanceTeacherId = async (classId, schoolId, requester = {}) => 
   return cls.teacherId;
 };
 
+const applyAttendanceRecordPopulation = (query) => query
+  .populate({
+    path: 'studentId',
+    select: 'userId nationalId',
+    populate: { path: 'userId', select: 'name' },
+  })
+  .populate('teacherId', 'userId');
+
 const applyOwnershipFilter = async (filter, schoolId, requester = {}, requestedStudentId, requestedClassId) => {
   if (requester.role === 'parent') {
     const parentScope = await getParentScope(requester.userId, schoolId);
@@ -310,11 +318,10 @@ const getAttendance = async (query, schoolId, requester = {}) => {
   await applyOwnershipFilter(filter, schoolId, requester, query.studentId, query.classId);
 
   const [records, total] = await Promise.all([
-    Attendance.find(filter)
-      .populate('studentId', 'userId nationalId')
-      .populate('teacherId', 'userId')
-      .skip(skip).limit(limit).sort(sort)
-      .lean(),
+    applyAttendanceRecordPopulation(
+      Attendance.find(filter)
+        .skip(skip).limit(limit).sort(sort),
+    ).lean(),
     Attendance.countDocuments(filter),
   ]);
 
