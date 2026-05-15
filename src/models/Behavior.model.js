@@ -15,7 +15,7 @@ const behaviorSchema = new mongoose.Schema(
   {
     schoolId: { type: mongoose.Schema.Types.ObjectId, ref: 'School', required: true },
     studentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Student', required: true },
-    teacherId: { type: mongoose.Schema.Types.ObjectId, ref: 'Teacher', required: true },
+    teacherId: { type: mongoose.Schema.Types.ObjectId, ref: 'Teacher', default: null },
     classId: { type: mongoose.Schema.Types.ObjectId, ref: 'Class', required: true },
     type: { type: String, enum: ['positive', 'negative'], required: true },
     category: {

@@ -28,6 +28,20 @@ const linkUploadedFiles = async (attachments, schoolId, contextId) => {
   );
 };
 
+const resolveBehaviorTeacherIdForClass = (cls, requester = {}) => {
+  if (!cls) throw new ApiError(404, 'Class not found');
+
+  if (cls.teacherId) {
+    return cls.teacherId;
+  }
+
+  if (requester.role === 'school_admin' || requester.role === 'administrative') {
+    return null;
+  }
+
+  throw new ApiError(400, 'Class must have an assigned teacher');
+};
+
 const resolveBehaviorTeacherId = async (classId, schoolId, requester = {}) => {
   if (requester.role === 'teacher') {
     const scope = await getTeacherScope(requester.userId, schoolId);
@@ -36,9 +50,7 @@ const resolveBehaviorTeacherId = async (classId, schoolId, requester = {}) => {
   }
 
   const cls = await Class.findOne({ _id: classId, schoolId, isDeleted: false }).select('teacherId');
-  if (!cls) throw new ApiError(404, 'Class not found');
-  if (!cls.teacherId) throw new ApiError(400, 'Class must have an assigned teacher');
-  return cls.teacherId;
+  return resolveBehaviorTeacherIdForClass(cls, requester);
 };
 
 const listBehavior = async (query, schoolId, requester = {}) => {
@@ -223,4 +235,13 @@ const deleteBehavior = async (id, schoolId, requester = {}) => {
   await record.save({ validateBeforeSave: false });
 };
 
-module.exports = { listBehavior, getBehaviorById, createBehavior, updateBehavior, deleteBehavior };
+module.exports = {
+  listBehavior,
+  getBehaviorById,
+  createBehavior,
+  updateBehavior,
+  deleteBehavior,
+  __testables: {
+    resolveBehaviorTeacherIdForClass,
+  },
+};
