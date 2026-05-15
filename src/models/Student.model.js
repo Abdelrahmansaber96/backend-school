@@ -5,7 +5,7 @@ const studentSchema = new mongoose.Schema(
     userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, unique: true },
     schoolId: { type: mongoose.Schema.Types.ObjectId, ref: 'School', required: true },
     nationalId: { type: String, required: true, trim: true },
-    classId: { type: mongoose.Schema.Types.ObjectId, ref: 'Class', required: true },
+    classId: { type: mongoose.Schema.Types.ObjectId, ref: 'Class', default: null },
     parentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Parent', default: null },
     dateOfBirth: { type: Date, default: null },
     gender: { type: String, enum: ['male', 'female', 'unspecified'], default: 'unspecified' },

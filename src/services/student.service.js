@@ -18,7 +18,9 @@ const { assertRequesterRole } = require('../utils/authorization');
 const { toObjectId, toObjectIds, escapeRegex } = require('../utils/mongo');
 const auditLogger = require('../utils/auditLogger');
 const notificationService = require('./notification.service');
+const { createClass: createClassService } = require('./class.service');
 const { generateTempPassword } = require('../utils/password');
+const { getCurrentHijriAcademicYear } = require('../utils/academicYear');
 
 const IMPORT_SPECIAL_STATUS = new Set(['orphan', 'health_condition', 'learning_difficulty']);
 const OBJECT_ID_PATTERN = /^[a-f\d]{24}$/i;
@@ -148,6 +150,165 @@ const findClassForImportRow = (classes, row) => {
 
     return false;
   }) || null;
+};
+
+const isSectionLikeValue = (value) => {
+  const normalized = normalizeLookupValue(value);
+  return Boolean(normalized) && SECTION_ALIAS_MAP.has(normalized);
+};
+
+const extractSectionFromClassRef = (value) => {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+
+  if (isSectionLikeValue(raw)) {
+    return raw;
+  }
+
+  const parts = raw.split(/\s+/).filter(Boolean);
+  const lastPart = parts[parts.length - 1] || '';
+  return isSectionLikeValue(lastPart) ? lastPart : '';
+};
+
+const buildImportedClassName = (row) => {
+  const classRef = String(row.classRef || '').trim();
+  const gradeRef = String(row.gradeRef || '').trim();
+
+  if (classRef) {
+    if (gradeRef && isSectionLikeValue(classRef)) {
+      return `${gradeRef} ${classRef}`.trim();
+    }
+
+    return classRef;
+  }
+
+  return gradeRef;
+};
+
+const resolveImportedClassGrade = (row) => {
+  const gradeFromGradeRef = normalizeGradeValue(row.gradeRef);
+  if (gradeFromGradeRef) {
+    return gradeFromGradeRef;
+  }
+
+  const classRef = String(row.classRef || '').trim();
+  if (!classRef || isSectionLikeValue(classRef)) {
+    return '';
+  }
+
+  return normalizeGradeValue(classRef);
+};
+
+const buildImportedClassPayload = (row) => {
+  const classRef = String(row.classRef || '').trim();
+  const gradeRef = String(row.gradeRef || '').trim();
+
+  if (!classRef && !gradeRef) {
+    return null;
+  }
+
+  if (OBJECT_ID_PATTERN.test(classRef)) {
+    return null;
+  }
+
+  const name = buildImportedClassName(row);
+  const grade = resolveImportedClassGrade(row) || normalizeArabicDigits(gradeRef).trim();
+
+  if (!name || !grade) {
+    return null;
+  }
+
+  return {
+    name,
+    grade,
+    section: extractSectionFromClassRef(classRef) || undefined,
+    academicYear: getCurrentHijriAcademicYear(),
+  };
+};
+
+const findClassByImportPayload = (classes, payload) => {
+  if (!payload) return null;
+
+  const nameKey = normalizeLookupValue(payload.name);
+  const gradeKey = normalizeGradeValue(payload.grade);
+  const sectionKey = normalizeSectionValue(payload.section);
+
+  return classes.find((item) => {
+    const itemNameKey = normalizeLookupValue(item.name);
+    const itemGradeKey = normalizeGradeValue(item.grade);
+    const itemSectionKey = normalizeSectionValue(item.section);
+
+    if (itemNameKey !== nameKey || itemGradeKey !== gradeKey) {
+      return false;
+    }
+
+    if (!sectionKey || !itemSectionKey) {
+      return true;
+    }
+
+    return itemSectionKey === sectionKey;
+  }) || null;
+};
+
+const registerImportedClass = (classes, classesById, cls) => {
+  const normalizedClass = {
+    _id: String(cls._id),
+    name: cls.name,
+    grade: cls.grade,
+    section: cls.section || null,
+  };
+
+  classes.push(normalizedClass);
+  classesById.set(normalizedClass._id, normalizedClass);
+  return normalizedClass;
+};
+
+const resolveClassForImportedStudent = async ({ classes, classesById, row, schoolId, requester }) => {
+  const classRef = String(row.classRef || '').trim();
+  const hasClassInfo = Boolean(classRef || String(row.gradeRef || '').trim());
+
+  if (!hasClassInfo) {
+    return { resolvedClass: null, autoCreated: false };
+  }
+
+  if (OBJECT_ID_PATTERN.test(classRef)) {
+    return {
+      resolvedClass: classesById.get(classRef) || null,
+      autoCreated: false,
+    };
+  }
+
+  const existingClass = findClassForImportRow(classes, row);
+  if (existingClass) {
+    return { resolvedClass: existingClass, autoCreated: false };
+  }
+
+  const importedClassPayload = buildImportedClassPayload(row);
+  const draftMatch = findClassByImportPayload(classes, importedClassPayload);
+  if (draftMatch) {
+    return { resolvedClass: draftMatch, autoCreated: false };
+  }
+
+  if (!importedClassPayload) {
+    return { resolvedClass: null, autoCreated: false };
+  }
+
+  try {
+    const createdClass = await createClassService(importedClassPayload, schoolId, requester);
+    return {
+      resolvedClass: registerImportedClass(classes, classesById, createdClass),
+      autoCreated: true,
+    };
+  } catch (error) {
+    if (error?.statusCode === 409) {
+      const conflictMatch = findClassByImportPayload(classes, importedClassPayload);
+      if (conflictMatch) {
+        return { resolvedClass: conflictMatch, autoCreated: false };
+      }
+    }
+
+    throw error;
+  }
 };
 
 const extractImportRows = (file) => {
@@ -450,9 +611,9 @@ const createStudent = async (data, schoolId, requester = {}) => {
   const existing = await User.findOne({ $or: [{ nationalId }, { phone }], isDeleted: false });
   if (existing) throw new ApiError(409, 'National ID or phone already in use');
 
-  const [parent] = await Promise.all([
+  const [parent, resolvedClass] = await Promise.all([
     parentId ? ensureSchoolReference(Parent, parentId, schoolId, 'Parent') : Promise.resolve(null),
-    ensureSchoolReference(Class, classId, schoolId, 'Class'),
+    classId ? ensureSchoolReference(Class, classId, schoolId, 'Class') : Promise.resolve(null),
   ]);
 
   const hiddenPassword = generateTempPassword();
@@ -467,7 +628,7 @@ const createStudent = async (data, schoolId, requester = {}) => {
     userId: user._id,
     schoolId,
     nationalId,
-    classId,
+    classId: resolvedClass?._id ?? null,
     parentId: parent?._id ?? null,
     gender: gender || 'unspecified',
     dateOfBirth, healthStatus, specialStatus,
@@ -520,16 +681,18 @@ const importStudents = async (file, schoolId, requester = {}) => {
 
   const created = [];
   const errors = [];
+  let autoCreatedClassCount = 0;
+  let unassignedCount = 0;
 
   for (const row of normalizedRows) {
     const rowErrors = [];
     const importedName = resolveImportedStudentName(row);
+    const hasClassInfo = Boolean(String(row.classRef || '').trim() || String(row.gradeRef || '').trim());
 
     if (!row.nationalId) rowErrors.push('nationalId is required');
     if (!importedName.first) rowErrors.push('student name is required');
     if (!importedName.last) rowErrors.push('student name is incomplete');
     if (!row.phone) rowErrors.push('phone is required');
-    if (!row.classRef) rowErrors.push('classId or class name is required');
     if (row.gender && !['male', 'female', 'unspecified'].includes(row.gender)) {
       rowErrors.push('gender must be male, female, or unspecified');
     }
@@ -542,11 +705,28 @@ const importStudents = async (file, schoolId, requester = {}) => {
       rowErrors.push(`specialStatus contains invalid values: ${specialStatus.invalid.join(', ')}`);
     }
 
-    const classRef = row.classRef || '';
-    const resolvedClass = OBJECT_ID_PATTERN.test(classRef)
-      ? classesById.get(classRef)
-      : findClassForImportRow(classes, row);
-    if (!resolvedClass) rowErrors.push(`class ${classRef || '—'} was not found in this school`);
+    const classRef = String(row.classRef || '').trim();
+    let resolvedClass = null;
+    let autoCreatedClass = false;
+
+    try {
+      const classResolution = await resolveClassForImportedStudent({
+        classes,
+        classesById,
+        row,
+        schoolId,
+        requester,
+      });
+
+      resolvedClass = classResolution.resolvedClass;
+      autoCreatedClass = classResolution.autoCreated;
+    } catch (error) {
+      rowErrors.push(error.message);
+    }
+
+    if (classRef && OBJECT_ID_PATTERN.test(classRef) && !resolvedClass) {
+      rowErrors.push(`class ${classRef} was not found in this school`);
+    }
 
     const parentRef = row.parentRef || '';
     const resolvedParent = parentRef
@@ -571,7 +751,7 @@ const importStudents = async (file, schoolId, requester = {}) => {
         nationalId: row.nationalId,
         name: importedName,
         phone: row.phone,
-        classId: resolvedClass._id,
+        classId: resolvedClass?._id,
         parentId: resolvedParent?._id,
         gender: row.gender || 'unspecified',
         dateOfBirth: parsedDate,
@@ -584,6 +764,14 @@ const importStudents = async (file, schoolId, requester = {}) => {
         studentId: String(result.student._id),
         nationalId: row.nationalId,
       });
+
+      if (autoCreatedClass) {
+        autoCreatedClassCount += 1;
+      }
+
+      if (!resolvedClass || !hasClassInfo) {
+        unassignedCount += 1;
+      }
 
       fileNationalIds.add(row.nationalId);
       filePhones.add(row.phone);
@@ -598,6 +786,8 @@ const importStudents = async (file, schoolId, requester = {}) => {
     totalRows: normalizedRows.length,
     importedCount: created.length,
     errorCount: errors.length,
+    autoCreatedClassCount,
+    unassignedCount,
   };
 
   await notificationService.createNotification({
@@ -641,9 +831,11 @@ const updateStudent = async (studentId, schoolId, updates, requester = {}) => {
   }
 
   const studentUpdates = {};
-  if (hasOwn('classId') && classId) {
-    await ensureSchoolReference(Class, classId, schoolId, 'Class');
-    studentUpdates.classId = classId;
+  if (hasOwn('classId')) {
+    if (classId) {
+      await ensureSchoolReference(Class, classId, schoolId, 'Class');
+    }
+    studentUpdates.classId = classId || null;
   }
   if (hasOwn('parentId')) {
     if (parentId) {
@@ -702,5 +894,8 @@ module.exports = {
     normalizeGradeValue,
     normalizeSectionValue,
     findClassForImportRow,
+    buildImportedClassPayload,
+    findClassByImportPayload,
+    resolveImportedClassGrade,
   },
 };

@@ -29,3 +29,23 @@ test('student import resolves a class when the sheet uses latin section labels',
 
   assert.equal(resolved?._id, 'class-4a');
 });
+
+test('student import builds a class payload from grade and section when class does not exist', () => {
+  const payload = __testables.buildImportedClassPayload({
+    classRef: 'أ',
+    gradeRef: '١',
+  });
+
+  assert.deepEqual(payload, {
+    name: '١ أ',
+    grade: '1',
+    section: 'أ',
+    academicYear: payload.academicYear,
+  });
+  assert.match(payload.academicYear, /^\d{4}-\d{4}$/);
+});
+
+test('student import skips auto-creating a class when the sheet has no usable class data', () => {
+  assert.equal(__testables.buildImportedClassPayload({ classRef: '', gradeRef: '' }), null);
+  assert.equal(__testables.buildImportedClassPayload({ classRef: 'أ', gradeRef: '' }), null);
+});

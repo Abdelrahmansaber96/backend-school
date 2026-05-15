@@ -27,7 +27,7 @@ const updateStudentSchema = {
   body: Joi.object({
     name: nameSchema.optional(),
     phone: Joi.string().min(7).max(20).optional(),
-    classId: objectId.optional(),
+    classId: objectId.allow(null).optional(),
     parentId: objectId.allow(null).optional(),
     gender: Joi.string().valid('male', 'female', 'unspecified').optional(),
     dateOfBirth: Joi.date().iso().allow(null).optional(),
