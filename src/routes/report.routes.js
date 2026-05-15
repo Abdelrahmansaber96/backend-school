@@ -13,9 +13,8 @@ const {
 const authenticate = require('../middlewares/auth.middleware');
 const tenantMiddleware = require('../middlewares/tenant.middleware');
 const rbac = require('../middlewares/rbac.middleware');
-const { reportLimiter } = require('../middlewares/rateLimiter.middleware');
 
-router.use(authenticate, tenantMiddleware, reportLimiter);
+router.use(authenticate, tenantMiddleware);
 
 router.get('/attendance/export', rbac('super_admin', 'school_admin', 'teacher'), exportAttendanceReport);
 router.get('/attendance', rbac('super_admin', 'school_admin', 'teacher'), attendanceReport);
