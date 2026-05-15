@@ -53,6 +53,19 @@ const resolveBehaviorTeacherId = async (classId, schoolId, requester = {}) => {
   return resolveBehaviorTeacherIdForClass(cls, requester);
 };
 
+const applyBehaviorRecordPopulation = (query) => query
+  .populate({
+    path: 'studentId',
+    select: 'userId nationalId',
+    populate: { path: 'userId', select: 'name' },
+  })
+  .populate({
+    path: 'teacherId',
+    select: 'userId',
+    populate: { path: 'userId', select: 'name' },
+  })
+  .populate('classId', 'name grade');
+
 const listBehavior = async (query, schoolId, requester = {}) => {
   assertRequesterRole(requester, ['super_admin', 'school_admin', 'teacher', 'parent', 'student', 'administrative']);
 
@@ -106,11 +119,10 @@ const listBehavior = async (query, schoolId, requester = {}) => {
   }
 
   const [records, total] = await Promise.all([
-    Behavior.find(filter)
-      .populate('studentId', 'userId nationalId')
-      .populate('teacherId', 'userId')
-      .populate('classId', 'name grade')
-      .skip(skip).limit(limit).sort(sort),
+    applyBehaviorRecordPopulation(
+      Behavior.find(filter)
+        .skip(skip).limit(limit).sort(sort),
+    ),
     Behavior.countDocuments(filter),
   ]);
 
@@ -143,10 +155,7 @@ const getBehaviorById = async (id, schoolId, requester = {}) => {
     filter.studentId = studentScope.studentId;
   }
 
-  const record = await Behavior.findOne(filter)
-    .populate('studentId', 'userId nationalId')
-    .populate('teacherId', 'userId')
-    .populate('classId', 'name grade');
+  const record = await applyBehaviorRecordPopulation(Behavior.findOne(filter));
   if (!record) throw new ApiError(404, 'Behavior record not found');
   return record;
 };
