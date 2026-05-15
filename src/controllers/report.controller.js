@@ -35,8 +35,8 @@ const exportAttendanceReport = asyncHandler(async (req, res) => {
     schoolId: req.schoolId,
     userId: req.user._id,
     type: 'report_ready',
-    title: 'Attendance export generated',
-    body: `${file.fileName} is ready for download.`,
+    title: 'تم تجهيز تصدير تقرير الحضور',
+    body: `ملف ${file.fileName} جاهز للتنزيل.`,
     data: {
       entityType: 'reports',
       extra: {
@@ -61,8 +61,8 @@ const exportBehaviorReport = asyncHandler(async (req, res) => {
     schoolId: req.schoolId,
     userId: req.user._id,
     type: 'report_ready',
-    title: 'Behavior export generated',
-    body: `${file.fileName} is ready for download.`,
+    title: 'تم تجهيز تصدير تقرير السلوك',
+    body: `ملف ${file.fileName} جاهز للتنزيل.`,
     data: {
       entityType: 'reports',
       extra: {

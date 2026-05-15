@@ -1,3 +1,5 @@
+const fs = require('fs');
+const path = require('path');
 const PDFDocument = require('pdfkit');
 const XLSX = require('xlsx');
 const Attendance = require('../models/Attendance.model');
@@ -26,12 +28,81 @@ const EMPTY_BEHAVIOR_TOTALS = { positive: 0, negative: 0, total: 0 };
 const DEFAULT_WORKING_DAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday'];
 const WEEKDAY_NAMES = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 const REPORT_EXPORT_FORMATS = new Set(['csv', 'pdf', 'xlsx']);
+const DEFAULT_REPORT_SHEET_NAME = 'تقرير';
+const ATTENDANCE_STATUS_LABELS = {
+  absence: 'غياب',
+  late: 'تأخر',
+  permission: 'إذن',
+};
+const BEHAVIOR_TYPE_LABELS = {
+  positive: 'إيجابي',
+  negative: 'سلبي',
+};
+const BOOLEAN_ARABIC_LABELS = {
+  yes: 'نعم',
+  no: 'لا',
+};
+const arabicIntegerFormatter = new Intl.NumberFormat('ar-EG');
+const arabicDecimalFormatter = new Intl.NumberFormat('ar-EG', {
+  minimumFractionDigits: 1,
+  maximumFractionDigits: 1,
+});
+const arabicDateFormatter = new Intl.DateTimeFormat('ar-EG', {
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
+const arabicDateTimeFormatter = new Intl.DateTimeFormat('ar-EG', {
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+});
+const REPORT_PDF_FONT_CANDIDATES = [
+  process.env.REPORT_PDF_FONT_PATH,
+  path.resolve(__dirname, '..', '..', 'storage', 'fonts', 'NotoNaskhArabic-Regular.ttf'),
+  path.resolve(__dirname, '..', '..', 'storage', 'fonts', 'NotoSansArabic-Regular.ttf'),
+  '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+  '/usr/share/fonts/truetype/noto/NotoNaskhArabic-Regular.ttf',
+  '/usr/share/fonts/truetype/noto/NotoSansArabic-Regular.ttf',
+  'C:\\Windows\\Fonts\\arial.ttf',
+  'C:\\Windows\\Fonts\\tahoma.ttf',
+];
 
 const formatStudentName = (student) => {
   const first = student?.userId?.name?.first;
   const last = student?.userId?.name?.last;
   return [first, last].filter(Boolean).join(' ').trim();
 };
+
+const formatArabicInteger = (value) => arabicIntegerFormatter.format(Number(value || 0));
+
+const formatArabicRate = (value) => arabicDecimalFormatter.format(Number(value || 0));
+
+const formatArabicDate = (value) => {
+  if (!value) return '';
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return String(value);
+  }
+
+  return arabicDateFormatter.format(date);
+};
+
+const formatArabicDateTime = (value) => {
+  if (!value) return '';
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return String(value);
+  }
+
+  return arabicDateTimeFormatter.format(date);
+};
+
+const resolveReportPdfFontPath = () => REPORT_PDF_FONT_CANDIDATES.find((candidate) => candidate && fs.existsSync(candidate)) || null;
 
 const roundPercentage = (value, total) => (total > 0 ? Number(((value / total) * 100).toFixed(1)) : 0);
 
@@ -228,24 +299,29 @@ const normalizeExportFormat = (format) => {
 const buildPdfBuffer = ({ title, summaryLines = [], columns, rows }) => new Promise((resolve, reject) => {
   const doc = new PDFDocument({ margin: 36, size: 'A4' });
   const chunks = [];
+  const fontPath = resolveReportPdfFontPath();
 
   doc.on('data', (chunk) => chunks.push(chunk));
   doc.on('end', () => resolve(Buffer.concat(chunks)));
   doc.on('error', reject);
 
-  doc.fontSize(18).text(title);
+  if (fontPath) {
+    doc.font(fontPath);
+  }
+
+  doc.fontSize(18).text(title, { align: 'right' });
   doc.moveDown(0.5);
   summaryLines.filter(Boolean).forEach((line) => {
-    doc.fontSize(10).text(line);
+    doc.fontSize(10).text(line, { align: 'right' });
   });
 
   doc.moveDown();
-  doc.fontSize(10).text(columns.map((column) => column.label).join(' | '));
+  doc.fontSize(10).text(columns.map((column) => column.label).join(' | '), { align: 'right' });
   doc.moveDown(0.25);
 
   rows.forEach((row) => {
     const line = columns.map((column) => String(row[column.key] ?? '')).join(' | ');
-    doc.text(line);
+    doc.text(line, { align: 'right' });
   });
 
   doc.end();
@@ -259,10 +335,86 @@ const buildXlsxBuffer = (sheetName, columns, rows) => {
 
   const workbook = XLSX.utils.book_new();
   const sheet = XLSX.utils.json_to_sheet(normalizedRows);
-  XLSX.utils.book_append_sheet(workbook, sheet, String(sheetName || 'Report').slice(0, 31));
+  workbook.Workbook = { Views: [{ RTL: true }] };
+  XLSX.utils.book_append_sheet(workbook, sheet, String(sheetName || DEFAULT_REPORT_SHEET_NAME).slice(0, 31));
 
   return XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
 };
+
+const buildAttendanceExportDefinition = (report, query = {}) => {
+  const rows = report.daily.map((day) => ({
+    date: formatArabicDate(day.date),
+    total: day.total,
+    absence: day.absence,
+    late: day.late,
+    permission: day.permission,
+  }));
+
+  rows.push({
+    date: 'الإجمالي',
+    total: report.totals.total,
+    absence: report.totals.absence,
+    late: report.totals.late,
+    permission: report.totals.permission,
+  });
+
+  return {
+    format: query.format,
+    baseFileName: `attendance-report-${report.period.startDate.slice(0, 10)}-${report.period.endDate.slice(0, 10)}`,
+    title: 'تقرير الحضور',
+    sheetName: 'الحضور',
+    columns: [
+      { key: 'date', label: 'التاريخ' },
+      { key: 'total', label: 'إجمالي السجلات' },
+      { key: 'absence', label: 'غياب' },
+      { key: 'late', label: 'تأخر' },
+      { key: 'permission', label: 'إذن' },
+    ],
+    rows,
+    summaryLines: [
+      `الفترة: ${formatArabicDate(report.period.startDate)} إلى ${formatArabicDate(report.period.endDate)}`,
+      `عدد الطلاب: ${formatArabicInteger(report.summary.totalStudents)}`,
+      `نسبة الحضور: ${formatArabicRate(report.summary.attendanceRate)}%`,
+      `نسبة الغياب: ${formatArabicRate(report.summary.absenceRate)}%`,
+    ],
+  };
+};
+
+const buildBehaviorExportDefinition = (report, query = {}) => ({
+  format: query.format,
+  baseFileName: `behavior-report-${(query.startDate || query.from || 'all').slice ? (query.startDate || query.from || 'all').slice(0, 10) : 'all'}-${(query.endDate || query.to || 'all').slice ? (query.endDate || query.to || 'all').slice(0, 10) : 'all'}`,
+  title: 'تقرير السلوك',
+  sheetName: 'السلوك',
+  columns: [
+    { key: 'createdAt', label: 'تاريخ التسجيل' },
+    { key: 'studentName', label: 'اسم الطالب' },
+    { key: 'nationalId', label: 'رقم الهوية' },
+    { key: 'className', label: 'الفصل' },
+    { key: 'grade', label: 'الصف' },
+    { key: 'type', label: 'النوع' },
+    { key: 'category', label: 'الفئة' },
+    { key: 'description', label: 'الوصف' },
+    { key: 'attachments', label: 'عدد المرفقات' },
+    { key: 'notifyParent', label: 'إشعار ولي الأمر' },
+  ],
+  rows: report.records.map((record) => ({
+    createdAt: formatArabicDateTime(record.createdAt),
+    studentName: formatStudentName(record.studentId),
+    nationalId: record.studentId?.nationalId || '',
+    className: record.classId?.name || '',
+    grade: record.classId?.grade || '',
+    type: BEHAVIOR_TYPE_LABELS[record.type] || record.type,
+    category: record.category || '',
+    description: record.description,
+    attachments: Array.isArray(record.attachments) ? record.attachments.length : 0,
+    notifyParent: record.notifyParent ? BOOLEAN_ARABIC_LABELS.yes : BOOLEAN_ARABIC_LABELS.no,
+  })),
+  summaryLines: [
+    `إجمالي الملاحظات الإيجابية: ${formatArabicInteger(report.positive)}`,
+    `إجمالي الملاحظات السلبية: ${formatArabicInteger(report.negative)}`,
+    `نسبة الملاحظات الإيجابية: ${formatArabicRate(report.summary.positiveRate)}%`,
+  ],
+});
 
 const buildExportFile = async ({ format, baseFileName, title, sheetName, columns, rows, summaryLines = [] }) => {
   const normalizedFormat = normalizeExportFormat(format);
@@ -693,83 +845,12 @@ const studentReport = async ({ studentId, startDate, endDate, academicYear }, sc
 
 const exportAttendanceReport = async (query, schoolId, requester = {}) => {
   const report = await attendanceReport(query, schoolId, requester);
-  const rows = report.daily.map((day) => ({
-    date: day.date,
-    total: day.total,
-    absence: day.absence,
-    late: day.late,
-    permission: day.permission,
-  }));
-
-  rows.push({
-    date: 'TOTAL',
-    total: report.totals.total,
-    absence: report.totals.absence,
-    late: report.totals.late,
-    permission: report.totals.permission,
-  });
-
-  return buildExportFile({
-    format: query.format,
-    baseFileName: `attendance-report-${report.period.startDate.slice(0, 10)}-${report.period.endDate.slice(0, 10)}`,
-    title: 'Attendance Report',
-    sheetName: 'Attendance',
-    columns: [
-      { key: 'date', label: 'Date' },
-      { key: 'total', label: 'Total records' },
-      { key: 'absence', label: 'Absence' },
-      { key: 'late', label: 'Late' },
-      { key: 'permission', label: 'Permission' },
-    ],
-    rows,
-    summaryLines: [
-      `Period: ${report.period.startDate} -> ${report.period.endDate}`,
-      `Students: ${report.summary.totalStudents}`,
-      `Attendance rate: ${report.summary.attendanceRate}%`,
-      `Absence rate: ${report.summary.absenceRate}%`,
-    ],
-  });
+  return buildExportFile(buildAttendanceExportDefinition(report, query));
 };
 
 const exportBehaviorReport = async (query, schoolId, requester = {}) => {
   const report = await behaviorReport(query, schoolId, requester);
-  const rows = report.records.map((record) => ({
-    createdAt: record.createdAt ? new Date(record.createdAt).toISOString() : '',
-    studentName: formatStudentName(record.studentId),
-    nationalId: record.studentId?.nationalId || '',
-    className: record.classId?.name || '',
-    grade: record.classId?.grade || '',
-    type: record.type,
-    category: record.category || '',
-    description: record.description,
-    attachments: Array.isArray(record.attachments) ? record.attachments.length : 0,
-    notifyParent: record.notifyParent ? 'yes' : 'no',
-  }));
-
-  return buildExportFile({
-    format: query.format,
-    baseFileName: `behavior-report-${(query.startDate || query.from || 'all').slice ? (query.startDate || query.from || 'all').slice(0, 10) : 'all'}-${(query.endDate || query.to || 'all').slice ? (query.endDate || query.to || 'all').slice(0, 10) : 'all'}`,
-    title: 'Behavior Report',
-    sheetName: 'Behavior',
-    columns: [
-      { key: 'createdAt', label: 'Created at' },
-      { key: 'studentName', label: 'Student' },
-      { key: 'nationalId', label: 'National ID' },
-      { key: 'className', label: 'Class' },
-      { key: 'grade', label: 'Grade' },
-      { key: 'type', label: 'Type' },
-      { key: 'category', label: 'Category' },
-      { key: 'description', label: 'Description' },
-      { key: 'attachments', label: 'Attachment count' },
-      { key: 'notifyParent', label: 'Notify parent' },
-    ],
-    rows,
-    summaryLines: [
-      `Positive notes: ${report.positive}`,
-      `Negative notes: ${report.negative}`,
-      `Positive rate: ${report.summary.positiveRate}%`,
-    ],
-  });
+  return buildExportFile(buildBehaviorExportDefinition(report, query));
 };
 
 /**
@@ -884,4 +965,13 @@ module.exports = {
   exportBehaviorReport,
   schoolSummary,
   dashboardSummary,
+  __testables: {
+    buildAttendanceExportDefinition,
+    buildBehaviorExportDefinition,
+    resolveReportPdfFontPath,
+    formatArabicDate,
+    formatArabicDateTime,
+    ATTENDANCE_STATUS_LABELS,
+    BEHAVIOR_TYPE_LABELS,
+  },
 };

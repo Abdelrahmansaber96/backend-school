@@ -12,7 +12,7 @@ const escapeCsvValue = (value) => {
 const buildCsv = (headers, rows) => {
   const headerLine = headers.map((header) => escapeCsvValue(header.label)).join(',');
   const dataLines = rows.map((row) => headers.map((header) => escapeCsvValue(row[header.key])).join(','));
-  return [headerLine, ...dataLines].join('\n');
+  return `\uFEFF${[headerLine, ...dataLines].join('\n')}`;
 };
 
 module.exports = {
