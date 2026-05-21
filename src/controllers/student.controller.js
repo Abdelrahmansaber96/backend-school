@@ -29,6 +29,14 @@ const createStudent = asyncHandler(async (req, res) => {
   );
 });
 
+const exportStudents = asyncHandler(async (req, res) => {
+  const file = await studentService.exportStudents(req.query, req.schoolId, getRequesterContext(req));
+
+  res.setHeader('Content-Type', file.mimeType);
+  res.setHeader('Content-Disposition', `attachment; filename="${file.fileName}"`);
+  return res.status(200).send(file.content);
+});
+
 const importStudents = asyncHandler(async (req, res) => {
   const result = await studentService.importStudents(req.file, req.schoolId, getRequesterContext(req));
   return res.status(200).json(new ApiResponse(200, result, 'Student import completed'));
@@ -49,6 +57,7 @@ module.exports = {
   getStudentById,
   getMyStudentProfile,
   createStudent,
+  exportStudents,
   importStudents,
   updateStudent,
   deleteStudent,

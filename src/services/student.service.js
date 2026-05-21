@@ -3,6 +3,7 @@ const Student = require('../models/Student.model');
 const User = require('../models/User.model');
 const Class = require('../models/Class.model');
 const Parent = require('../models/Parent.model');
+const School = require('../models/School.model');
 const ApiError = require('../utils/ApiError');
 const { getPagination, getSorting, buildPagination } = require('../utils/pagination');
 const {
@@ -36,6 +37,80 @@ const ARABIC_INDIC_DIGITS = {
   '٨': '8',
   '٩': '9',
 };
+const GRADE_DISPLAY_LABELS = new Map([
+  ['1', 'الأول الابتدائي'],
+  ['2', 'الثاني الابتدائي'],
+  ['3', 'الثالث الابتدائي'],
+  ['4', 'الرابع الابتدائي'],
+  ['5', 'الخامس الابتدائي'],
+  ['6', 'السادس الابتدائي'],
+  ['7', 'الأول المتوسط'],
+  ['8', 'الثاني المتوسط'],
+  ['9', 'الثالث المتوسط'],
+  ['10', 'الأول الثانوي'],
+  ['11', 'الثاني الثانوي'],
+  ['12', 'الثالث الثانوي'],
+]);
+const HIJRI_DATE_FORMATTER = new Intl.DateTimeFormat('en-u-ca-islamic', {
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
+const STUDENT_ROSTER_HEADER_ROW = 20;
+const STUDENT_ROSTER_FIRST_DATA_ROW = 21;
+const STUDENT_ROSTER_STATIC_MERGES = [
+  'AA1:AE2',
+  'AA7:AE7',
+  'AA11:AE11',
+  'E3:G3',
+  'K3:L3',
+  'E5:G5',
+  'K5:L5',
+  'E9:G9',
+  'K9:L9',
+  'E13:G13',
+  'K13:L13',
+  'R17:V17',
+  'C20:E20',
+  'F20:H20',
+  'I20:L20',
+  'M20:N20',
+  'Q20:R20',
+  'U20:W20',
+  'Z20:AA20',
+  'AD20:AE20',
+];
+const STUDENT_ROSTER_ROW_MERGES = [
+  ['C', 'E'],
+  ['F', 'H'],
+  ['I', 'L'],
+  ['M', 'N'],
+  ['Q', 'R'],
+  ['U', 'W'],
+  ['Z', 'AA'],
+  ['AD', 'AE'],
+];
+const STUDENT_ROSTER_COLUMNS = (() => {
+  const columns = Array.from({ length: 31 }, () => ({ wch: 4 }));
+
+  [2, 3, 4].forEach((index) => { columns[index] = { wch: 7 }; });
+  [5, 6, 7].forEach((index) => { columns[index] = { wch: 8 }; });
+  [8, 9, 10, 11].forEach((index) => { columns[index] = { wch: 9 }; });
+  [12, 13].forEach((index) => { columns[index] = { wch: 8 }; });
+  columns[15] = { wch: 8 };
+  [16, 17].forEach((index) => { columns[index] = { wch: 10 }; });
+  columns[18] = { wch: 7 };
+  columns[19] = { wch: 8 };
+  [20, 21, 22].forEach((index) => { columns[index] = { wch: 7 }; });
+  columns[23] = { wch: 8 };
+  columns[24] = { wch: 10 };
+  [25, 26].forEach((index) => { columns[index] = { wch: 8 }; });
+  columns[27] = { wch: 10 };
+  columns[28] = { wch: 18 };
+  [29, 30].forEach((index) => { columns[index] = { wch: 5 }; });
+
+  return columns;
+})();
 const GRADE_ALIAS_MAP = new Map([
   ['اول', '1'],
   ['الاول', '1'],
@@ -405,6 +480,189 @@ const resolveImportedStudentName = (row) => {
   return splitImportedName(row.fullName);
 };
 
+const getUserFullName = (user) => [user?.name?.first, user?.name?.last].filter(Boolean).join(' ').trim();
+
+const formatHijriDate = (value) => {
+  if (!value) return '';
+
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return '';
+  }
+
+  const parts = HIJRI_DATE_FORMATTER.formatToParts(date);
+  const day = parts.find((part) => part.type === 'day')?.value || '';
+  const month = parts.find((part) => part.type === 'month')?.value || '';
+  const year = parts.find((part) => part.type === 'year')?.value || '';
+
+  if (!day || !month || !year) {
+    return '';
+  }
+
+  return `${day}/${month}/${year}`;
+};
+
+const getGradeDisplayLabel = (grade) => {
+  const normalizedGrade = normalizeGradeValue(grade);
+  return GRADE_DISPLAY_LABELS.get(normalizedGrade) || String(grade || '').trim() || 'غير محدد';
+};
+
+const getRosterGradeSortKey = (grade) => {
+  const normalizedGrade = normalizeGradeValue(grade);
+  const numericGrade = Number.parseInt(normalizedGrade, 10);
+  return Number.isNaN(numericGrade) ? Number.MAX_SAFE_INTEGER : numericGrade;
+};
+
+const sanitizeSheetName = (value) => String(value || '')
+  .replace(/[\\/?*\[\]:]/g, ' ')
+  .replace(/\s+/g, ' ')
+  .trim();
+
+const buildRosterSheetName = (group, sheetIndex, usedNames) => {
+  const baseName = sanitizeSheetName([
+    group.grade ? getGradeDisplayLabel(group.grade) : '',
+    group.className || 'بدون فصل',
+  ].filter(Boolean).join(' - ')) || `كشف الطلاب ${sheetIndex + 1}`;
+
+  let candidate = baseName.slice(0, 31);
+  let suffixIndex = 2;
+
+  while (usedNames.has(candidate)) {
+    const suffix = ` (${suffixIndex})`;
+    candidate = `${baseName.slice(0, Math.max(0, 31 - suffix.length))}${suffix}`;
+    suffixIndex += 1;
+  }
+
+  usedNames.add(candidate);
+  return candidate;
+};
+
+const setSheetValue = (sheet, address, value) => {
+  sheet[address] = { t: 's', v: String(value ?? '') };
+};
+
+const buildStudentRosterGroups = (students) => {
+  const groups = new Map();
+
+  students.forEach((student) => {
+    const classKey = student.classId?._id ? String(student.classId._id) : '__unassigned__';
+    if (!groups.has(classKey)) {
+      groups.set(classKey, {
+        key: classKey,
+        className: student.classId?.name || 'بدون فصل',
+        grade: student.classId?.grade || '',
+        section: student.classId?.section || '',
+        students: [],
+      });
+    }
+
+    groups.get(classKey).students.push(student);
+  });
+
+  return [...groups.values()]
+    .map((group) => ({
+      ...group,
+      students: [...group.students].sort((left, right) => {
+        const leftName = getUserFullName(left.userId);
+        const rightName = getUserFullName(right.userId);
+        return leftName.localeCompare(rightName, 'ar-SA')
+          || String(left.nationalId || '').localeCompare(String(right.nationalId || ''), 'ar-SA');
+      }),
+    }))
+    .sort((left, right) => (
+      getRosterGradeSortKey(left.grade) - getRosterGradeSortKey(right.grade)
+      || String(left.className || '').localeCompare(String(right.className || ''), 'ar-SA')
+      || String(left.section || '').localeCompare(String(right.section || ''), 'ar-SA')
+    ));
+};
+
+const buildStudentRosterWorkbookBuffer = ({ school, students }) => {
+  const workbook = XLSX.utils.book_new();
+  workbook.Workbook = { Views: [{ RTL: true }] };
+
+  const groups = buildStudentRosterGroups(students);
+  const usedSheetNames = new Set();
+
+  groups.forEach((group, sheetIndex) => {
+    const sheet = {};
+    const merges = STUDENT_ROSTER_STATIC_MERGES.map((range) => XLSX.utils.decode_range(range));
+    const schoolName = school?.nameAr || school?.name || 'المدرسة';
+    const schoolAddress = school?.address || 'إدارة التعليم';
+    const academicYear = group.students[0]?.classId?.academicYear || school?.academicYear || getCurrentHijriAcademicYear();
+    const lastRow = Math.max(STUDENT_ROSTER_FIRST_DATA_ROW, STUDENT_ROSTER_FIRST_DATA_ROW + group.students.length - 1);
+
+    setSheetValue(sheet, 'AA1', 'المملكة العربية السعودية\nوزارة التعليم');
+    setSheetValue(sheet, 'AA7', schoolAddress);
+    setSheetValue(sheet, 'AA11', schoolName);
+    setSheetValue(sheet, 'E3', academicYear);
+    setSheetValue(sheet, 'H3', ':');
+    setSheetValue(sheet, 'K3', 'العام الدراسي');
+    setSheetValue(sheet, 'E5', getGradeDisplayLabel(group.grade));
+    setSheetValue(sheet, 'H5', ':');
+    setSheetValue(sheet, 'L5', 'الصف');
+    setSheetValue(sheet, 'E9', group.section || group.className || 'غير محدد');
+    setSheetValue(sheet, 'H9', ':');
+    setSheetValue(sheet, 'L9', 'القسم');
+    setSheetValue(sheet, 'E13', group.className || 'بدون فصل');
+    setSheetValue(sheet, 'H13', ':');
+    setSheetValue(sheet, 'L13', 'الفصل');
+    setSheetValue(sheet, 'R17', 'كشف الطلاب');
+
+    [
+      ['C20', 'رقم جوال الطالب'],
+      ['F20', 'عنوان القريب'],
+      ['I20', 'اسم قريب الطالب'],
+      ['M20', 'هاتف العمل'],
+      ['P20', 'هاتف المنزل'],
+      ['Q20', 'إسم ولي الامر'],
+      ['S20', 'الفصل'],
+      ['T20', 'تاريخ رخصة الاقامة'],
+      ['U20', 'رقم رخصة الاقامة'],
+      ['X20', 'الجنسية'],
+      ['Y20', 'تاريخ الميلاد'],
+      ['Z20', 'مكان الميلاد'],
+      ['AB20', 'حالة القيد'],
+      ['AC20', 'اسم الطالب'],
+      ['AD20', 'م'],
+    ].forEach(([address, value]) => setSheetValue(sheet, address, value));
+
+    group.students.forEach((student, index) => {
+      const rowNumber = STUDENT_ROSTER_FIRST_DATA_ROW + index;
+      const parentName = getUserFullName(student.parentId?.userId);
+      const parentPhone = student.parentId?.userId?.phone || '';
+      const parentAddress = student.parentId?.address || '';
+
+      STUDENT_ROSTER_ROW_MERGES.forEach(([startColumn, endColumn]) => {
+        merges.push(XLSX.utils.decode_range(`${startColumn}${rowNumber}:${endColumn}${rowNumber}`));
+      });
+
+      setSheetValue(sheet, `C${rowNumber}`, student.userId?.phone || '');
+      setSheetValue(sheet, `F${rowNumber}`, parentAddress);
+      setSheetValue(sheet, `I${rowNumber}`, parentName);
+      setSheetValue(sheet, `M${rowNumber}`, '');
+      setSheetValue(sheet, `P${rowNumber}`, parentPhone);
+      setSheetValue(sheet, `Q${rowNumber}`, parentName);
+      setSheetValue(sheet, `S${rowNumber}`, student.classId?.name || group.className || '');
+      setSheetValue(sheet, `T${rowNumber}`, '');
+      setSheetValue(sheet, `U${rowNumber}`, student.nationalId || '');
+      setSheetValue(sheet, `X${rowNumber}`, '');
+      setSheetValue(sheet, `Y${rowNumber}`, formatHijriDate(student.dateOfBirth));
+      setSheetValue(sheet, `Z${rowNumber}`, '');
+      setSheetValue(sheet, `AB${rowNumber}`, student.userId?.isActive === false || student.isActive === false ? 'غير نشط' : 'مستمر في الدراسة');
+      setSheetValue(sheet, `AC${rowNumber}`, getUserFullName(student.userId));
+      setSheetValue(sheet, `AD${rowNumber}`, index + 1);
+    });
+
+    sheet['!cols'] = STUDENT_ROSTER_COLUMNS;
+    sheet['!merges'] = merges;
+    sheet['!ref'] = `C1:AE${lastRow}`;
+
+    XLSX.utils.book_append_sheet(workbook, sheet, buildRosterSheetName(group, sheetIndex, usedSheetNames));
+  });
+
+  return XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+};
+
 const buildLookupStages = (from, localField, as, project) => [
   {
     $lookup: {
@@ -420,10 +678,64 @@ const buildLookupStages = (from, localField, as, project) => [
   { $unwind: { path: `$${as}`, preserveNullAndEmptyArrays: true } },
 ];
 
-const listStudents = async (query, schoolId, requester = {}) => {
+const STUDENT_LIST_PROJECTION = {
+  _id: 1,
+  schoolId: 1,
+  nationalId: 1,
+  dateOfBirth: 1,
+  gender: 1,
+  healthStatus: 1,
+  specialStatus: 1,
+  enrollmentDate: 1,
+  isActive: 1,
+  createdAt: 1,
+  updatedAt: 1,
+  userId: {
+    $cond: [
+      { $ifNull: ['$user._id', false] },
+      {
+        _id: '$user._id',
+        name: '$user.name',
+        phone: '$user.phone',
+        avatar: '$user.avatar',
+        isActive: '$user.isActive',
+      },
+      null,
+    ],
+  },
+  classId: {
+    $cond: [
+      { $ifNull: ['$class._id', false] },
+      {
+        _id: '$class._id',
+        name: '$class.name',
+        grade: '$class.grade',
+        section: '$class.section',
+        academicYear: '$class.academicYear',
+      },
+      null,
+    ],
+  },
+  parentId: {
+    $cond: [
+      { $ifNull: ['$parent._id', false] },
+      {
+        _id: '$parent._id',
+        address: '$parent.address',
+        userId: {
+          _id: '$parentUser._id',
+          name: '$parentUser.name',
+          phone: '$parentUser.phone',
+        },
+      },
+      null,
+    ],
+  },
+};
+
+const buildStudentListContext = async (query, schoolId, requester = {}) => {
   assertRequesterRole(requester, ['super_admin', 'school_admin', 'teacher']);
 
-  const { page, limit, skip } = getPagination(query);
   const sort = getSorting(query, ['createdAt', 'nationalId']);
   const filter = { isDeleted: false };
   if (schoolId) filter.schoolId = toObjectId(schoolId, 'schoolId');
@@ -458,95 +770,64 @@ const listStudents = async (query, schoolId, requester = {}) => {
     name: 1,
     grade: 1,
     section: 1,
+    academicYear: 1,
   });
   const parentLookupStages = [
-    ...buildLookupStages('parents', 'parentId', 'parent', { _id: 1, userId: 1 }),
+    ...buildLookupStages('parents', 'parentId', 'parent', { _id: 1, userId: 1, address: 1 }),
     ...buildLookupStages('users', 'parent.userId', 'parentUser', { _id: 1, name: 1, phone: 1 }),
   ];
 
   const needsUserLookupForFilter = Boolean(searchPattern);
   const needsClassLookupForFilter = Boolean(query.grade);
 
+  return {
+    query,
+    sort,
+    searchPattern,
+    userLookupStages,
+    classLookupStages,
+    parentLookupStages,
+    needsUserLookupForFilter,
+    needsClassLookupForFilter,
+    filterStages: [
+      { $match: filter },
+      ...(needsUserLookupForFilter ? userLookupStages : []),
+      ...(needsClassLookupForFilter ? classLookupStages : []),
+      ...(query.grade ? [{ $match: { 'class.grade': query.grade } }] : []),
+      ...(searchPattern
+        ? [{
+          $match: {
+            $or: [
+              { nationalId: { $regex: searchPattern } },
+              { 'user.name.first': { $regex: searchPattern } },
+              { 'user.name.last': { $regex: searchPattern } },
+            ],
+          },
+        }]
+        : []),
+    ],
+  };
+};
+
+const buildStudentHydrationStages = (context, { skip, limit } = {}) => [
+  { $sort: context.sort },
+  ...(typeof skip === 'number' ? [{ $skip: skip }] : []),
+  ...(typeof limit === 'number' ? [{ $limit: limit }] : []),
+  ...(!context.needsUserLookupForFilter ? context.userLookupStages : []),
+  ...(!context.needsClassLookupForFilter ? context.classLookupStages : []),
+  ...context.parentLookupStages,
+  { $project: STUDENT_LIST_PROJECTION },
+];
+
+const listStudents = async (query, schoolId, requester = {}) => {
+  const { page, limit, skip } = getPagination(query);
+  const context = await buildStudentListContext(query, schoolId, requester);
+
   const pipeline = [
-    { $match: filter },
-    ...(needsUserLookupForFilter ? userLookupStages : []),
-    ...(needsClassLookupForFilter ? classLookupStages : []),
-    ...(query.grade ? [{ $match: { 'class.grade': query.grade } }] : []),
-    ...(searchPattern
-      ? [{
-        $match: {
-          $or: [
-            { nationalId: { $regex: searchPattern } },
-            { 'user.name.first': { $regex: searchPattern } },
-            { 'user.name.last': { $regex: searchPattern } },
-          ],
-        },
-      }]
-      : []),
+    ...context.filterStages,
     {
       $facet: {
-        data: [
-          { $sort: sort },
-          { $skip: skip },
-          { $limit: limit },
-          ...(!needsUserLookupForFilter ? userLookupStages : []),
-          ...(!needsClassLookupForFilter ? classLookupStages : []),
-          ...parentLookupStages,
-          {
-            $project: {
-              _id: 1,
-              schoolId: 1,
-              nationalId: 1,
-              dateOfBirth: 1,
-              gender: 1,
-              healthStatus: 1,
-              specialStatus: 1,
-              enrollmentDate: 1,
-              isActive: 1,
-              createdAt: 1,
-              updatedAt: 1,
-              userId: {
-                $cond: [
-                  { $ifNull: ['$user._id', false] },
-                  {
-                    _id: '$user._id',
-                    name: '$user.name',
-                    phone: '$user.phone',
-                    avatar: '$user.avatar',
-                    isActive: '$user.isActive',
-                  },
-                  null,
-                ],
-              },
-              classId: {
-                $cond: [
-                  { $ifNull: ['$class._id', false] },
-                  {
-                    _id: '$class._id',
-                    name: '$class.name',
-                    grade: '$class.grade',
-                    section: '$class.section',
-                  },
-                  null,
-                ],
-              },
-              parentId: {
-                $cond: [
-                  { $ifNull: ['$parent._id', false] },
-                  {
-                    _id: '$parent._id',
-                    userId: {
-                      _id: '$parentUser._id',
-                      name: '$parentUser.name',
-                      phone: '$parentUser.phone',
-                    },
-                  },
-                  null,
-                ],
-              },
-            },
-          },
-        ],
+        data: buildStudentHydrationStages(context, { skip, limit }),
         total: [
           { $count: 'count' },
         ],
@@ -639,6 +920,33 @@ const createStudent = async (data, schoolId, requester = {}) => {
   }
 
   return { student };
+};
+
+const exportStudents = async (query, schoolId, requester = {}) => {
+  const format = String(query.format || 'xlsx').trim().toLowerCase();
+  if (format !== 'xlsx') {
+    throw new ApiError(400, 'Only xlsx export is supported for student roster');
+  }
+
+  const context = await buildStudentListContext(query, schoolId, requester);
+  const [students, school] = await Promise.all([
+    Student.aggregate([
+      ...context.filterStages,
+      ...buildStudentHydrationStages(context),
+    ]),
+    School.findById(schoolId).select('name nameAr address academicYear').lean(),
+  ]);
+
+  if (!students.length) {
+    throw new ApiError(404, 'No students found for export');
+  }
+
+  return {
+    format: 'xlsx',
+    fileName: `student-roster-${(school?.academicYear || getCurrentHijriAcademicYear()).replace(/\s+/g, '-')}.xlsx`,
+    mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    content: buildStudentRosterWorkbookBuffer({ school, students }),
+  };
 };
 
 const importStudents = async (file, schoolId, requester = {}) => {
@@ -886,10 +1194,12 @@ module.exports = {
   getStudentById,
   getMyStudentProfile,
   createStudent,
+  exportStudents,
   importStudents,
   updateStudent,
   deleteStudent,
   __testables: {
+    buildStudentRosterWorkbookBuffer,
     normalizeLookupValue,
     normalizeGradeValue,
     normalizeSectionValue,
