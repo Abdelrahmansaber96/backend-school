@@ -5,6 +5,7 @@ const schoolService = require('../services/school.service');
 
 const getRequesterContext = (req) => ({
   role: req.user.role,
+  userId: req.user._id,
   schoolId: req.schoolId || req.user.schoolId || null,
 });
 
@@ -71,7 +72,15 @@ const updateBranding = asyncHandler(async (req, res) => {
   return res.status(200).json(new ApiResponse(200, school, 'Branding updated'));
 });
 
+const purgeCurrentSchoolData = asyncHandler(async (req, res) => {
+  const schoolId = req.schoolId || (req.user && req.user.schoolId);
+  if (!schoolId) throw new ApiError(400, 'No school context');
+
+  const result = await schoolService.purgeCurrentSchoolData(schoolId, req.body, getRequesterContext(req));
+  return res.status(200).json(new ApiResponse(200, result, 'School operational data deleted'));
+});
+
 module.exports = {
   listSchools, getSchoolById, createSchool, updateSchool, updateCurrentSchoolProfile, updateSettings, deleteSchool,
-  getCurrentSchool, updateBranding,
+  getCurrentSchool, updateBranding, purgeCurrentSchoolData,
 };

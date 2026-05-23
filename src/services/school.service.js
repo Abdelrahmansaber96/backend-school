@@ -1,10 +1,41 @@
 const mongoose = require('mongoose');
+const Attendance = require('../models/Attendance.model');
+const AuditLog = require('../models/AuditLog.model');
+const Behavior = require('../models/Behavior.model');
+const Class = require('../models/Class.model');
+const Conversation = require('../models/Conversation.model');
+const FileUpload = require('../models/FileUpload.model');
+const Grade = require('../models/Grade.model');
+const Message = require('../models/Message.model');
+const Notification = require('../models/Notification.model');
+const Parent = require('../models/Parent.model');
 const School = require('../models/School.model');
+const Student = require('../models/Student.model');
+const Subject = require('../models/Subject.model');
+const Teacher = require('../models/Teacher.model');
 const User = require('../models/User.model');
 const ApiError = require('../utils/ApiError');
 const { hashPassword } = require('../utils/password');
 const { getPagination, getSorting, buildPagination } = require('../utils/pagination');
 const { assertRequesterRole } = require('../utils/authorization');
+const uploadService = require('./upload.service');
+
+const SCHOOL_DATA_PURGE_CONFIRMATION_TEXT = 'حذف جميع البيانات';
+const DEFAULT_PURGE_MODELS = {
+  AuditLog,
+  Notification,
+  Message,
+  Conversation,
+  Attendance,
+  Behavior,
+  Grade,
+  Student,
+  Parent,
+  Teacher,
+  Subject,
+  Class,
+  User,
+};
 
 const normalizeOptionalText = (value) => {
   if (value === undefined) return undefined;
@@ -111,6 +142,78 @@ const assertSchoolAccess = (targetSchoolId, requester = {}) => {
   if (String(targetSchoolId) !== String(requester.schoolId)) {
     throw new ApiError(403, 'Access denied for this school');
   }
+};
+
+const buildPurgeUploadFilter = (schoolId, preservedAdminUserIds = []) => {
+  if (!preservedAdminUserIds.length) {
+    return { schoolId };
+  }
+
+  return {
+    schoolId,
+    $or: [
+      { context: { $ne: 'avatar' } },
+      { uploadedBy: { $nin: preservedAdminUserIds } },
+    ],
+  };
+};
+
+const purgeSchoolOperationalData = async ({ schoolId, preservedAdminUserIds = [], uploads = [], requester = {} }, dependencies = {}) => {
+  const models = { ...DEFAULT_PURGE_MODELS, ...(dependencies.models || {}) };
+  const uploadsService = dependencies.uploadService || uploadService;
+  const summary = {
+    uploads: 0,
+    auditLogs: 0,
+    notifications: 0,
+    messages: 0,
+    conversations: 0,
+    attendance: 0,
+    behavior: 0,
+    grades: 0,
+    students: 0,
+    parents: 0,
+    teachers: 0,
+    subjects: 0,
+    classes: 0,
+    users: 0,
+  };
+
+  for (const upload of uploads) {
+    if (!upload?.publicId) continue;
+    await uploadsService.deleteFile(upload.publicId, schoolId, requester.userId, requester.role);
+    summary.uploads += 1;
+  }
+
+  const deleteSteps = [
+    ['auditLogs', models.AuditLog],
+    ['notifications', models.Notification],
+    ['messages', models.Message],
+    ['conversations', models.Conversation],
+    ['attendance', models.Attendance],
+    ['behavior', models.Behavior],
+    ['grades', models.Grade],
+    ['students', models.Student],
+    ['parents', models.Parent],
+    ['teachers', models.Teacher],
+    ['subjects', models.Subject],
+    ['classes', models.Class],
+  ];
+
+  for (const [key, model] of deleteSteps) {
+    const result = await model.deleteMany({ schoolId });
+    summary[key] = result?.deletedCount || 0;
+  }
+
+  const userDeleteFilter = preservedAdminUserIds.length
+    ? { schoolId, _id: { $nin: preservedAdminUserIds } }
+    : { schoolId };
+  const deletedUsers = await models.User.deleteMany(userDeleteFilter);
+  summary.users = deletedUsers?.deletedCount || 0;
+
+  return {
+    counts: summary,
+    totalDeleted: Object.values(summary).reduce((total, count) => total + count, 0),
+  };
 };
 
 /**
@@ -361,7 +464,38 @@ const updateBranding = async (schoolId, brandingData, requester = {}) => {
   return school;
 };
 
+const purgeCurrentSchoolData = async (schoolId, input = {}, requester = {}) => {
+  assertRequesterRole(requester, ['school_admin']);
+  assertSchoolAccess(schoolId, requester);
+
+  if (String(input.confirmationText || '').trim() !== SCHOOL_DATA_PURGE_CONFIRMATION_TEXT) {
+    throw new ApiError(400, 'Invalid confirmation text');
+  }
+
+  const adminUsers = await User.find({ schoolId, role: 'school_admin', isDeleted: false }).select('_id').lean();
+  const preservedAdminUserIds = [...new Set([
+    ...adminUsers.map((user) => String(user._id)),
+    requester.userId ? String(requester.userId) : null,
+  ].filter(Boolean))];
+
+  const uploads = await FileUpload.find(buildPurgeUploadFilter(schoolId, preservedAdminUserIds))
+    .select('publicId')
+    .lean();
+
+  return purgeSchoolOperationalData({
+    schoolId,
+    preservedAdminUserIds,
+    uploads,
+    requester,
+  });
+};
+
 module.exports = {
   listSchools, getSchoolById, createSchool, updateSchool, updateCurrentSchoolProfile, updateSettings, deleteSchool,
-  getBySubdomain, getCurrentSchool, updateBranding,
+  getBySubdomain, getCurrentSchool, updateBranding, purgeCurrentSchoolData,
+  __testables: {
+    SCHOOL_DATA_PURGE_CONFIRMATION_TEXT,
+    buildPurgeUploadFilter,
+    purgeSchoolOperationalData,
+  },
 };

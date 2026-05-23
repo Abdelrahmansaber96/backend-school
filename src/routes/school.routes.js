@@ -3,7 +3,7 @@ const router = express.Router();
 
 const {
   listSchools, getSchoolById, createSchool, updateSchool, updateCurrentSchoolProfile, updateSettings, deleteSchool,
-  getCurrentSchool, updateBranding,
+  getCurrentSchool, updateBranding, purgeCurrentSchoolData,
 } = require('../controllers/school.controller');
 const authenticate = require('../middlewares/auth.middleware');
 const { authenticateOptional } = require('../middlewares/auth.middleware');
@@ -16,6 +16,7 @@ const {
   updateCurrentSchoolProfileSchema,
   updateSettingsSchema,
   updateBrandingSchema,
+  purgeCurrentSchoolDataSchema,
 } = require('../validators/school.validator');
 
 // Public-friendly route — resolve current school from authenticated user when available
@@ -29,6 +30,7 @@ router.post('/', rbac('super_admin'), validate(createSchoolSchema), createSchool
 
 router.put('/branding', rbac('super_admin', 'school_admin'), tenantMiddleware, validate(updateBrandingSchema), updateBranding);
 router.patch('/profile', rbac('super_admin', 'school_admin'), tenantMiddleware, validate(updateCurrentSchoolProfileSchema), updateCurrentSchoolProfile);
+router.post('/purge', rbac('school_admin'), tenantMiddleware, validate(purgeCurrentSchoolDataSchema), purgeCurrentSchoolData);
 
 router.get('/:id', rbac('super_admin', 'school_admin'), tenantMiddleware, getSchoolById);
 router.patch('/:id', rbac('super_admin'), tenantMiddleware, validate(updateSchoolSchema), updateSchool);

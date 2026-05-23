@@ -121,10 +121,17 @@ const updateBrandingSchema = {
   }),
 };
 
+const purgeCurrentSchoolDataSchema = {
+  body: Joi.object({
+    confirmationText: Joi.string().trim().valid('حذف جميع البيانات').required(),
+  }),
+};
+
 module.exports = {
   createSchoolSchema,
   updateSchoolSchema,
   updateCurrentSchoolProfileSchema,
   updateSettingsSchema,
   updateBrandingSchema,
+  purgeCurrentSchoolDataSchema,
 };
