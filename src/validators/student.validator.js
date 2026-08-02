@@ -6,6 +6,11 @@ const nameSchema = Joi.object({
   last: Joi.string().min(2).max(50).required(),
 });
 
+const emergencyContactSchema = Joi.object({
+  phone: Joi.string().min(7).max(20).required(),
+  relationship: Joi.string().min(2).max(50).required(),
+});
+
 const createStudentSchema = {
   body: Joi.object({
     nationalId: Joi.string().min(5).max(20).required(),
@@ -13,6 +18,7 @@ const createStudentSchema = {
     phone: Joi.string().min(7).max(20).required(),
     classId: objectId.required(),
     parentId: objectId.optional(),
+    emergencyContacts: Joi.array().items(emergencyContactSchema).max(5).optional(),
     gender: Joi.string().valid('male', 'female', 'unspecified').optional(),
     dateOfBirth: Joi.date().iso().optional(),
     healthStatus: Joi.string().max(500).optional(),
@@ -29,6 +35,7 @@ const updateStudentSchema = {
     phone: Joi.string().min(7).max(20).optional(),
     classId: objectId.allow(null).optional(),
     parentId: objectId.allow(null).optional(),
+    emergencyContacts: Joi.array().items(emergencyContactSchema).max(5).optional(),
     gender: Joi.string().valid('male', 'female', 'unspecified').optional(),
     dateOfBirth: Joi.date().iso().allow(null).optional(),
     healthStatus: Joi.string().max(500).allow('', null).optional(),

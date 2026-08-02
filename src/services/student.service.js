@@ -169,6 +169,8 @@ const normalizeArabicDigits = (value) => String(value || '').replace(/[٠-٩]/g,
 const normalizeImportHeader = (value) => String(value || '')
   .trim()
   .toLowerCase()
+  .replace(/[أإآ]/g, 'ا')
+  .replace(/ى/g, 'ي')
   .replace(/[\s._-]+/g, '');
 
 const normalizeLookupValue = (value) => normalizeArabicDigits(value)
@@ -416,6 +418,8 @@ const normalizeImportRow = ({ rowNumber, row }) => {
     if (['lastname', 'studentlastname', 'namelast', 'اسمالعائلة', 'الاسمالاخير'].includes(header)) normalized.lastName = String(value || '').trim();
     if (['fullname', 'name', 'studentname', 'studentfullname', 'الاسم', 'اسمالطالب', 'اسمكامل'].includes(header)) normalized.fullName = String(value || '').trim();
     if (['phone', 'studentphone', 'mobilenumber', 'الجوال', 'رقمالجوال', 'هاتف'].includes(header)) normalized.phone = String(value || '').trim();
+    if (['additionalphone', 'secondaryphone', 'alternatephone', 'emergencyphone', 'رقمجوالاضافي', 'رقمالجوالاضافي', 'رقمالجوالالثاني', 'جوالاضافي'].includes(header)) normalized.additionalPhone = String(value || '').trim();
+    if (['relationship', 'relation', 'kinship', 'emergencyrelationship', 'صلةالقرابة', 'القرابة', 'صلةالقريب'].includes(header)) normalized.additionalPhoneRelationship = String(value || '').trim();
     if (['classid', 'classname', 'class', 'classcode', 'الفصل', 'اسمالفصل', 'الفصلالدراسي'].includes(header)) normalized.classRef = String(value || '').trim();
     if (['grade', 'stage', 'الصف', 'المرحلة'].includes(header)) normalized.gradeRef = String(value || '').trim();
     if (['parentid', 'parentnationalid', 'parentnationalnumber', 'parent', 'هويةوليالامر', 'وليالامر'].includes(header)) normalized.parentRef = String(value || '').trim();
@@ -687,6 +691,7 @@ const STUDENT_LIST_PROJECTION = {
   healthStatus: 1,
   specialStatus: 1,
   enrollmentDate: 1,
+  emergencyContacts: 1,
   isActive: 1,
   createdAt: 1,
   updatedAt: 1,
@@ -887,7 +892,7 @@ const getMyStudentProfile = async (schoolId, requester = {}) => {
 const createStudent = async (data, schoolId, requester = {}) => {
   assertRequesterRole(requester, ['school_admin']);
 
-  const { nationalId, name, phone, classId, parentId, gender, dateOfBirth, healthStatus, specialStatus } = data;
+  const { nationalId, name, phone, classId, parentId, emergencyContacts, gender, dateOfBirth, healthStatus, specialStatus } = data;
 
   const existing = await User.findOne({ $or: [{ nationalId }, { phone }], isDeleted: false });
   if (existing) throw new ApiError(409, 'National ID or phone already in use');
@@ -911,6 +916,7 @@ const createStudent = async (data, schoolId, requester = {}) => {
     nationalId,
     classId: resolvedClass?._id ?? null,
     parentId: parent?._id ?? null,
+    emergencyContacts: emergencyContacts || [],
     gender: gender || 'unspecified',
     dateOfBirth, healthStatus, specialStatus,
   });
@@ -1001,6 +1007,12 @@ const importStudents = async (file, schoolId, requester = {}) => {
     if (!importedName.first) rowErrors.push('student name is required');
     if (!importedName.last) rowErrors.push('student name is incomplete');
     if (!row.phone) rowErrors.push('phone is required');
+    if (row.additionalPhone && !row.additionalPhoneRelationship) {
+      rowErrors.push('relationship is required when additionalPhone is provided');
+    }
+    if (!row.additionalPhone && row.additionalPhoneRelationship) {
+      rowErrors.push('additionalPhone is required when relationship is provided');
+    }
     if (row.gender && !['male', 'female', 'unspecified'].includes(row.gender)) {
       rowErrors.push('gender must be male, female, or unspecified');
     }
@@ -1061,6 +1073,9 @@ const importStudents = async (file, schoolId, requester = {}) => {
         phone: row.phone,
         classId: resolvedClass?._id,
         parentId: resolvedParent?._id,
+        emergencyContacts: row.additionalPhone
+          ? [{ phone: row.additionalPhone, relationship: row.additionalPhoneRelationship }]
+          : [],
         gender: row.gender || 'unspecified',
         dateOfBirth: parsedDate,
         healthStatus: row.healthStatus || null,
@@ -1207,5 +1222,6 @@ module.exports = {
     buildImportedClassPayload,
     findClassByImportPayload,
     resolveImportedClassGrade,
+    normalizeImportRow,
   },
 };

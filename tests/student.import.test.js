@@ -49,3 +49,24 @@ test('student import skips auto-creating a class when the sheet has no usable cl
   assert.equal(__testables.buildImportedClassPayload({ classRef: '', gradeRef: '' }), null);
   assert.equal(__testables.buildImportedClassPayload({ classRef: 'أ', gradeRef: '' }), null);
 });
+
+test('student import reads an optional additional phone and relationship from Arabic headers', () => {
+  const row = __testables.normalizeImportRow({
+    rowNumber: 2,
+    row: {
+      'اسم الطالب': 'أحمد محمد',
+      'رقم الهوية': '1234567890',
+      الصف: 'الأول',
+      'رقم الجوال': '0500000000',
+      'رقم جوال إضافي': '0555555555',
+      'صلة القرابة': 'الأم',
+    },
+  });
+
+  assert.equal(row.fullName, 'أحمد محمد');
+  assert.equal(row.nationalId, '1234567890');
+  assert.equal(row.gradeRef, 'الأول');
+  assert.equal(row.phone, '0500000000');
+  assert.equal(row.additionalPhone, '0555555555');
+  assert.equal(row.additionalPhoneRelationship, 'الأم');
+});

@@ -7,6 +7,10 @@ const studentSchema = new mongoose.Schema(
     nationalId: { type: String, required: true, trim: true },
     classId: { type: mongoose.Schema.Types.ObjectId, ref: 'Class', default: null },
     parentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Parent', default: null },
+    emergencyContacts: [{
+      phone: { type: String, required: true, trim: true, maxlength: 20 },
+      relationship: { type: String, required: true, trim: true, maxlength: 50 },
+    }],
     dateOfBirth: { type: Date, default: null },
     gender: { type: String, enum: ['male', 'female', 'unspecified'], default: 'unspecified' },
     healthStatus: { type: String, trim: true, default: null },
