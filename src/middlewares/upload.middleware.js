@@ -3,7 +3,14 @@ const ApiError = require('../utils/ApiError');
 
 const ALLOWED_TYPES = {
   avatar: ['image/jpeg', 'image/png', 'image/webp'],
-  behavior: ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'],
+  behavior: [
+    'image/jpeg',
+    'image/png',
+    'image/webp',
+    'application/pdf',
+    'application/vnd.ms-excel',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  ],
   message: [
     'image/jpeg', 'image/png', 'image/webp',
     'application/pdf',
