@@ -907,7 +907,7 @@ const createStudent = async (data, schoolId, requester = {}) => {
   const user = await User.create({
     schoolId, role: 'student', nationalId, phone,
     password: hiddenPassword,
-    name, mustChangePassword: false, // students usually don't change passwords
+    name, mustChangePassword: true,
   });
 
   const student = await Student.create({
@@ -925,7 +925,8 @@ const createStudent = async (data, schoolId, requester = {}) => {
     await Parent.findByIdAndUpdate(parent._id, { $addToSet: { children: student._id } });
   }
 
-  return { student };
+  // Returned only in the creation response; the User model stores a hash, not this value.
+  return { student, tempPassword: hiddenPassword };
 };
 
 const exportStudents = async (query, schoolId, requester = {}) => {
