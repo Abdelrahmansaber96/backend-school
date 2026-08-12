@@ -236,6 +236,7 @@ const importTeachers = async (file, schoolId, requester = {}) => {
         teacherId: String(result.teacher._id),
         name: `${importedName.first} ${importedName.last}`,
         nationalId: row.nationalId,
+        phone: row.phone,
         temporaryPassword: result.tempPassword,
       });
 

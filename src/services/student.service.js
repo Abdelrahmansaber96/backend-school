@@ -970,7 +970,10 @@ const importStudents = async (file, schoolId, requester = {}) => {
 
   const [classes, parents] = await Promise.all([
     Class.find({ schoolId, isDeleted: false }).select('_id name grade').lean(),
-    Parent.find({ schoolId, isDeleted: false }).select('_id nationalId').lean(),
+    Parent.find({ schoolId, isDeleted: false })
+      .select('_id nationalId userId')
+      .populate('userId', 'phone')
+      .lean(),
   ]);
 
   const classesById = new Map(classes.map((item) => [String(item._id), item]));
@@ -1086,7 +1089,10 @@ const importStudents = async (file, schoolId, requester = {}) => {
       created.push({
         row: row.rowNumber,
         studentId: String(result.student._id),
+        name: `${importedName.first} ${importedName.last}`,
         nationalId: row.nationalId,
+        phone: resolvedParent?.userId?.phone || row.phone,
+        temporaryPassword: result.tempPassword,
       });
 
       if (autoCreatedClass) {
