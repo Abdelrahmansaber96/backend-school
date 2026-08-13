@@ -5,7 +5,7 @@ const { assertRequesterRole } = require('../utils/authorization');
 const { getTeacherAssignmentScope } = require('../utils/accessScope');
 
 const listSubjects = async (query, schoolId, requester = {}) => {
-  assertRequesterRole(requester, ['super_admin', 'school_admin', 'teacher']);
+  assertRequesterRole(requester, ['super_admin', 'school_admin', 'teacher', 'student']);
 
   const { page, limit, skip } = getPagination(query);
   const sort = getSorting(query, ['name', 'code', 'createdAt']);
@@ -41,7 +41,7 @@ const listSubjects = async (query, schoolId, requester = {}) => {
 };
 
 const getSubjectById = async (subjectId, schoolId, requester = {}) => {
-  assertRequesterRole(requester, ['super_admin', 'school_admin', 'teacher']);
+  assertRequesterRole(requester, ['super_admin', 'school_admin', 'teacher', 'student']);
 
   if (requester.role === 'teacher') {
     const scope = await getTeacherAssignmentScope(requester.userId, schoolId);

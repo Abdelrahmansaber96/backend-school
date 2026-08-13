@@ -12,9 +12,9 @@ const { createSubjectSchema, updateSubjectSchema } = require('../validators/subj
 
 router.use(authenticate, tenantMiddleware);
 
-router.get('/', rbac('super_admin', 'school_admin', 'teacher'), listSubjects);
+router.get('/', rbac('super_admin', 'school_admin', 'teacher', 'student'), listSubjects);
 router.post('/', rbac('school_admin'), validate(createSubjectSchema), createSubject);
-router.get('/:id', rbac('super_admin', 'school_admin', 'teacher'), getSubjectById);
+router.get('/:id', rbac('super_admin', 'school_admin', 'teacher', 'student'), getSubjectById);
 router.patch('/:id', rbac('school_admin'), validate(updateSubjectSchema), updateSubject);
 router.delete('/:id', rbac('school_admin'), deleteSubject);
 

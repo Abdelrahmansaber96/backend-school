@@ -1,6 +1,6 @@
 const asyncHandler = require('../utils/asyncHandler');
 const ApiResponse = require('../utils/ApiResponse');
-const reportService = require('../services/report.service');
+const dashboardService = require('../services/dashboard.service');
 
 const getRequesterContext = (req) => ({
   role: req.user.role,
@@ -8,7 +8,7 @@ const getRequesterContext = (req) => ({
 });
 
 const getDashboard = asyncHandler(async (req, res) => {
-  const summary = await reportService.dashboardSummary(req.schoolId, getRequesterContext(req));
+  const summary = await dashboardService.dashboardSummary(req.schoolId, getRequesterContext(req), req.query.range);
   return res.status(200).json(new ApiResponse(200, summary, 'Dashboard data fetched'));
 });
 

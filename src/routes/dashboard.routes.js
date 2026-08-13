@@ -8,6 +8,6 @@ const rbac = require('../middlewares/rbac.middleware');
 
 router.use(authenticate, tenantMiddleware);
 
-router.get('/', rbac('super_admin', 'school_admin', 'teacher', 'parent'), getDashboard);
+router.get('/', rbac('super_admin', 'school_admin', 'teacher', 'administrative', 'parent', 'student'), getDashboard);
 
 module.exports = router;

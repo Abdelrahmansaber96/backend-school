@@ -55,10 +55,6 @@ const login = async ({ identifier, password, identifierType = 'nationalId' }, ip
 
   if (!user.isActive) throw new ApiError(403, 'Account is deactivated', 'ACCOUNT_INACTIVE');
 
-  if (user.role === 'student') {
-    throw new ApiError(403, 'Student accounts are disabled', 'ACCOUNT_DISABLED');
-  }
-
   if (user.isLocked()) {
     throw new ApiError(423, `Account locked until ${user.lockedUntil.toISOString()}`, 'ACCOUNT_LOCKED');
   }
