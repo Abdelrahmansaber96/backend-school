@@ -38,7 +38,7 @@ app.use(cors({
 app.use(mongoSanitize()); // Prevent NoSQL injection
 
 // ─── Body Parsing ─────────────────────────────────────────────────────────────
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());
 

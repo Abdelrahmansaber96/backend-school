@@ -85,7 +85,24 @@ const purgeCurrentSchoolData = asyncHandler(async (req, res) => {
   return res.status(200).json(new ApiResponse(200, result, 'School operational data deleted'));
 });
 
+const downloadCurrentSchoolBackup = asyncHandler(async (req, res) => {
+  const schoolId = req.schoolId || req.user?.schoolId;
+  if (!schoolId) throw new ApiError(400, 'No school context');
+  const backup = await schoolService.createSchoolBackup(schoolId, getRequesterContext(req));
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="school-backup-${new Date().toISOString().slice(0, 10)}.json"`);
+  return res.status(200).send(JSON.stringify(backup, null, 2));
+});
+
+const restoreCurrentSchoolBackup = asyncHandler(async (req, res) => {
+  const schoolId = req.schoolId || req.user?.schoolId;
+  if (!schoolId) throw new ApiError(400, 'No school context');
+  const result = await schoolService.restoreSchoolBackup(schoolId, req.body.backup, req.body, getRequesterContext(req));
+  return res.status(200).json(new ApiResponse(200, result, 'تمت استعادة النسخة الاحتياطية'));
+});
+
 module.exports = {
   listSchools, getSchoolById, createSchool, updateSchool, updateSchoolStatus, updateCurrentSchoolProfile, updateSettings, deleteSchool,
   getCurrentSchool, updateBranding, purgeCurrentSchoolData,
+  downloadCurrentSchoolBackup, restoreCurrentSchoolBackup,
 };

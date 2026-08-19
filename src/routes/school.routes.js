@@ -3,7 +3,7 @@ const router = express.Router();
 
 const {
   listSchools, getSchoolById, createSchool, updateSchool, updateSchoolStatus, updateCurrentSchoolProfile, updateSettings, deleteSchool,
-  getCurrentSchool, updateBranding, purgeCurrentSchoolData,
+  getCurrentSchool, updateBranding, purgeCurrentSchoolData, downloadCurrentSchoolBackup, restoreCurrentSchoolBackup,
 } = require('../controllers/school.controller');
 const authenticate = require('../middlewares/auth.middleware');
 const { authenticateOptional } = require('../middlewares/auth.middleware');
@@ -18,6 +18,7 @@ const {
   updateSettingsSchema,
   updateBrandingSchema,
   purgeCurrentSchoolDataSchema,
+  restoreSchoolBackupSchema,
 } = require('../validators/school.validator');
 
 // Public-friendly route — resolve current school from authenticated user when available
@@ -32,6 +33,8 @@ router.post('/', rbac('super_admin'), validate(createSchoolSchema), createSchool
 router.put('/branding', rbac('super_admin', 'school_admin'), tenantMiddleware, validate(updateBrandingSchema), updateBranding);
 router.patch('/profile', rbac('super_admin', 'school_admin'), tenantMiddleware, validate(updateCurrentSchoolProfileSchema), updateCurrentSchoolProfile);
 router.post('/purge', rbac('school_admin'), tenantMiddleware, validate(purgeCurrentSchoolDataSchema), purgeCurrentSchoolData);
+router.get('/backup', rbac('school_admin'), tenantMiddleware, downloadCurrentSchoolBackup);
+router.post('/restore-backup', rbac('school_admin'), tenantMiddleware, validate(restoreSchoolBackupSchema), restoreCurrentSchoolBackup);
 
 router.get('/:id', rbac('super_admin', 'school_admin'), tenantMiddleware, getSchoolById);
 router.patch('/:id', rbac('super_admin'), tenantMiddleware, validate(updateSchoolSchema), updateSchool);

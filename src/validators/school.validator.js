@@ -87,6 +87,14 @@ const updateSchoolStatusSchema = {
   }),
 };
 
+const restoreSchoolBackupSchema = {
+  body: Joi.object({
+    backup: Joi.object().unknown(true).required(),
+    mode: Joi.string().valid('merge', 'replace').required(),
+    confirmationText: Joi.string().allow('').optional(),
+  }),
+};
+
 const updateCurrentSchoolProfileSchema = {
   body: Joi.object({
     address: Joi.string().min(5).max(200).optional(),
@@ -139,6 +147,7 @@ module.exports = {
   createSchoolSchema,
   updateSchoolSchema,
   updateSchoolStatusSchema,
+  restoreSchoolBackupSchema,
   updateCurrentSchoolProfileSchema,
   updateSettingsSchema,
   updateBrandingSchema,

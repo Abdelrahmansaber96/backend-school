@@ -15,6 +15,8 @@ const Subject = require('../models/Subject.model');
 const Teacher = require('../models/Teacher.model');
 const User = require('../models/User.model');
 const { sendEmailVerification } = require('./auth.service');
+const bcrypt = require('bcryptjs');
+const config = require('../config/env');
 const ApiError = require('../utils/ApiError');
 const { hashPassword } = require('../utils/password');
 const { getPagination, getSorting, buildPagination } = require('../utils/pagination');
@@ -22,6 +24,7 @@ const { assertRequesterRole } = require('../utils/authorization');
 const uploadService = require('./upload.service');
 
 const SCHOOL_DATA_PURGE_CONFIRMATION_TEXT = 'حذف جميع البيانات';
+const SCHOOL_RESTORE_CONFIRMATION_TEXT = 'استبدال جميع البيانات';
 const DEFAULT_PURGE_MODELS = {
   AuditLog,
   Notification,
@@ -509,11 +512,72 @@ const purgeCurrentSchoolData = async (schoolId, input = {}, requester = {}) => {
   });
 };
 
+const createSchoolBackup = async (schoolId, requester = {}) => {
+  assertRequesterRole(requester, ['school_admin']);
+  assertSchoolAccess(schoolId, requester);
+  const active = { schoolId, isDeleted: false };
+  const [school, users, classes, subjects, teachers, parents, students, attendance, behavior, grades, conversations, messages, notifications] = await Promise.all([
+    School.findById(schoolId).lean(),
+    User.find({ ...active, role: { $ne: 'school_admin' } }).select('-password -refreshToken').lean(),
+    Class.find(active).lean(), Subject.find(active).lean(), Teacher.find(active).lean(), Parent.find(active).lean(),
+    Student.find(active).lean(), Attendance.find(active).lean(), Behavior.find(active).lean(), Grade.find(active).lean(),
+    Conversation.find(active).lean(), Message.find(active).lean(), Notification.find(active).lean(),
+  ]);
+  return {
+    format: 'basma-school-backup', version: 1, createdAt: new Date().toISOString(),
+    school: { name: school?.name, nameAr: school?.nameAr, address: school?.address, phone: school?.phone, email: school?.email, academicYear: school?.academicYear, settings: school?.settings, branding: school?.branding },
+    data: { users, classes, subjects, teachers, parents, students, attendance, behavior, grades, conversations, messages, notifications },
+    notice: 'لا تحتوي النسخة على كلمات المرور أو الجلسات أو الملفات المرفوعة.',
+  };
+};
+
+const restoreSchoolBackup = async (schoolId, backup, { mode, confirmationText } = {}, requester = {}) => {
+  assertRequesterRole(requester, ['school_admin']);
+  assertSchoolAccess(schoolId, requester);
+  if (!backup || backup.format !== 'basma-school-backup' || backup.version !== 1 || !backup.data) throw new ApiError(400, 'ملف النسخة الاحتياطية غير صالح');
+  if (!['merge', 'replace'].includes(mode)) throw new ApiError(400, 'اختر وضع الاستعادة الصحيح');
+  if (mode === 'replace') {
+    if (String(confirmationText || '').trim() !== SCHOOL_RESTORE_CONFIRMATION_TEXT) throw new ApiError(400, 'عبارة تأكيد الاستبدال غير صحيحة');
+    await purgeCurrentSchoolData(schoolId, { confirmationText: SCHOOL_DATA_PURGE_CONFIRMATION_TEXT }, requester);
+  }
+  const data = backup.data;
+  const summaries = {};
+  const insert = async (key, Model, records, transform = (row) => row) => {
+    const normalized = await Promise.all((Array.isArray(records) ? records : []).map(async (row) => ({
+      ...await transform(row), schoolId, isDeleted: false, deletedAt: null,
+    })));
+    if (!normalized.length) { summaries[key] = 0; return; }
+    try { const result = await Model.insertMany(normalized, { ordered: false }); summaries[key] = result.length; }
+    catch (error) { summaries[key] = error.insertedDocs?.length || 0; }
+  };
+  await School.findByIdAndUpdate(schoolId, { $set: { address: backup.school?.address, phone: backup.school?.phone, email: backup.school?.email, academicYear: backup.school?.academicYear, settings: backup.school?.settings, branding: backup.school?.branding } }, { runValidators: true });
+  await insert('users', User, data.users, async (row) => ({
+    ...row,
+    password: await bcrypt.hash(`Restore@${String(row.nationalId || row.phone || '0000').slice(-4)}`, config.BCRYPT_ROUNDS),
+    refreshToken: null,
+    mustChangePassword: true,
+  }));
+  await insert('subjects', Subject, data.subjects);
+  await insert('classes', Class, data.classes);
+  await insert('teachers', Teacher, data.teachers);
+  await insert('parents', Parent, data.parents);
+  await insert('students', Student, data.students);
+  await insert('attendance', Attendance, data.attendance);
+  await insert('behavior', Behavior, data.behavior);
+  await insert('grades', Grade, data.grades);
+  await insert('conversations', Conversation, data.conversations);
+  await insert('messages', Message, data.messages);
+  await insert('notifications', Notification, data.notifications);
+  return { mode, counts: summaries, temporaryPasswordRule: 'Restore@ + آخر 4 أرقام من الهوية للحسابات المستعادة' };
+};
+
 module.exports = {
   listSchools, getSchoolById, createSchool, updateSchool, updateSchoolStatus, updateCurrentSchoolProfile, updateSettings, deleteSchool,
   getBySubdomain, getCurrentSchool, updateBranding, purgeCurrentSchoolData,
+  createSchoolBackup, restoreSchoolBackup,
   __testables: {
     SCHOOL_DATA_PURGE_CONFIRMATION_TEXT,
+    SCHOOL_RESTORE_CONFIRMATION_TEXT,
     buildPurgeUploadFilter,
     purgeSchoolOperationalData,
   },
