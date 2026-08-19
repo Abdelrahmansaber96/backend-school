@@ -22,6 +22,7 @@ const notificationService = require('./notification.service');
 const { createClass: createClassService } = require('./class.service');
 const { getCurrentHijriAcademicYear } = require('../utils/academicYear');
 const notificationTemplates = require('../utils/notificationTemplates');
+const { formatDualDate } = require('../utils/dualDate');
 
 const IMPORT_SPECIAL_STATUS = new Set(['orphan', 'health_condition', 'learning_difficulty']);
 const OBJECT_ID_PATTERN = /^[a-f\d]{24}$/i;
@@ -946,6 +947,53 @@ const createStudent = async (data, schoolId, requester = {}) => {
   return { student, tempPassword: hiddenPassword, parent, parentTempPassword };
 };
 
+// A compact, printable workbook for day-to-day school use. The legacy official
+// roster layout is intentionally not used for normal exports because it creates
+// a very wide sheet with separated cells that is difficult to read and filter.
+const buildSimpleStudentExportWorkbookBuffer = ({ school, students }) => {
+  const workbook = XLSX.utils.book_new();
+  workbook.Workbook = { Views: [{ RTL: true }] };
+  const schoolName = school?.nameAr || school?.name || 'المدرسة';
+  const academicYear = school?.academicYear || getCurrentHijriAcademicYear();
+  const rows = students.map((student, index) => ({
+    'م': index + 1,
+    'اسم الطالب': getUserFullName(student.userId),
+    'رقم الهوية': student.nationalId || '',
+    'رقم الجوال': student.userId?.phone || '',
+    'الصف': student.classId?.grade || '',
+    'الفصل': student.classId?.name || '',
+    'الشعبة': student.classId?.section || '',
+    'ولي الأمر': getUserFullName(student.parentId?.userId),
+    'جوال ولي الأمر': student.parentId?.userId?.phone || student.emergencyContacts?.[0]?.phone || '',
+    'تاريخ الميلاد (ميلادي/هجري)': student.dateOfBirth ? formatDualDate(student.dateOfBirth) : '',
+    'الحالة': student.userId?.isActive === false || student.isActive === false ? 'غير نشط' : 'نشط',
+  }));
+
+  const sheet = XLSX.utils.json_to_sheet(rows, { origin: 'A3' });
+  XLSX.utils.sheet_add_aoa(sheet, [
+    [`كشف الطلاب — ${schoolName}`],
+    [`العام الدراسي: ${academicYear} | عدد الطلاب: ${students.length}`],
+  ], { origin: 'A1' });
+
+  const lastRow = rows.length + 3;
+  sheet['!merges'] = [XLSX.utils.decode_range('A1:K1'), XLSX.utils.decode_range('A2:K2')];
+  sheet['!cols'] = [
+    { wch: 6 }, { wch: 28 }, { wch: 18 }, { wch: 16 }, { wch: 10 }, { wch: 18 },
+    { wch: 10 }, { wch: 28 }, { wch: 18 }, { wch: 31 }, { wch: 12 },
+  ];
+  sheet['!autofilter'] = { ref: `A3:K${lastRow}` };
+  sheet['!freeze'] = { xSplit: 0, ySplit: 3 };
+  ['A1', 'A2'].forEach((cell) => {
+    if (sheet[cell]) sheet[cell].s = { alignment: { horizontal: 'center', vertical: 'center' }, font: { bold: true } };
+  });
+  for (let column = 0; column < 11; column += 1) {
+    const cell = XLSX.utils.encode_cell({ c: column, r: 2 });
+    if (sheet[cell]) sheet[cell].s = { alignment: { horizontal: 'center', vertical: 'center', wrapText: true }, font: { bold: true } };
+  }
+  XLSX.utils.book_append_sheet(workbook, sheet, 'الطلاب');
+  return XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+};
+
 const listWhatsAppRecipients = async (query, schoolId, requester = {}) => {
   assertRequesterRole(requester, ['school_admin', 'teacher']);
   const { page, limit, skip } = getPagination({ ...query, limit: query.limit || 50 });
@@ -1007,7 +1055,7 @@ const exportStudents = async (query, schoolId, requester = {}) => {
     format: 'xlsx',
     fileName: `student-roster-${(school?.academicYear || getCurrentHijriAcademicYear()).replace(/\s+/g, '-')}.xlsx`,
     mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    content: buildStudentRosterWorkbookBuffer({ school, students }),
+    content: buildSimpleStudentExportWorkbookBuffer({ school, students }),
   };
 };
 
@@ -1279,6 +1327,7 @@ module.exports = {
   deleteStudent,
   __testables: {
     buildStudentRosterWorkbookBuffer,
+    buildSimpleStudentExportWorkbookBuffer,
     normalizeLookupValue,
     normalizeGradeValue,
     normalizeSectionValue,
