@@ -21,6 +21,7 @@ const userSchema = new mongoose.Schema(
     nationalId: { type: String, required: true, unique: true, trim: true, maxlength: 20 },
     phone: { type: String, required: true, unique: true, trim: true },
     email: { type: String, trim: true, lowercase: true, default: null },
+    emailVerifiedAt: { type: Date, default: null },
     password: { type: String, required: true, select: false },
     name: { type: nameSchema, required: true },
     avatar: { type: String, default: null },

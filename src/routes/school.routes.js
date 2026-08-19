@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 
 const {
-  listSchools, getSchoolById, createSchool, updateSchool, updateCurrentSchoolProfile, updateSettings, deleteSchool,
+  listSchools, getSchoolById, createSchool, updateSchool, updateSchoolStatus, updateCurrentSchoolProfile, updateSettings, deleteSchool,
   getCurrentSchool, updateBranding, purgeCurrentSchoolData,
 } = require('../controllers/school.controller');
 const authenticate = require('../middlewares/auth.middleware');
@@ -13,6 +13,7 @@ const validate = require('../middlewares/validate.middleware');
 const {
   createSchoolSchema,
   updateSchoolSchema,
+  updateSchoolStatusSchema,
   updateCurrentSchoolProfileSchema,
   updateSettingsSchema,
   updateBrandingSchema,
@@ -34,6 +35,7 @@ router.post('/purge', rbac('school_admin'), tenantMiddleware, validate(purgeCurr
 
 router.get('/:id', rbac('super_admin', 'school_admin'), tenantMiddleware, getSchoolById);
 router.patch('/:id', rbac('super_admin'), tenantMiddleware, validate(updateSchoolSchema), updateSchool);
+router.patch('/:id/status', rbac('super_admin'), tenantMiddleware, validate(updateSchoolStatusSchema), updateSchoolStatus);
 router.patch('/:id/settings', rbac('super_admin', 'school_admin'), tenantMiddleware, validate(updateSettingsSchema), updateSettings);
 router.delete('/:id', rbac('super_admin'), deleteSchool);
 

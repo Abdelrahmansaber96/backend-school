@@ -14,7 +14,7 @@ const adminSchema = Joi.object({
   }).required(),
   nationalId: Joi.string().min(5).max(20).required(),
   phone: Joi.string().min(7).max(20).required(),
-  email: Joi.string().email().optional(),
+  email: Joi.string().email().required(),
 });
 
 const leaderContactSchema = Joi.object({
@@ -48,7 +48,7 @@ const createSchoolSchema = {
       }),
     address: Joi.string().min(5).max(200).required(),
     phone: Joi.string().min(7).max(20).required(),
-    email: Joi.string().email().optional(),
+    email: Joi.string().email().required(),
     academicYear: Joi.string()
       .pattern(/^\d{4}-\d{4}$/)
       .default(() => getCurrentHijriAcademicYear()),
@@ -76,6 +76,14 @@ const updateSchoolSchema = {
       .pattern(/^\d{4}-\d{4}$/)
       .optional(),
     administration: administrationSchema.optional(),
+  }),
+};
+
+const updateSchoolStatusSchema = {
+  params: Joi.object({ id: Joi.string().hex().length(24).required() }),
+  body: Joi.object({
+    status: Joi.string().valid('active', 'suspended').required(),
+    reason: Joi.string().trim().max(500).allow('', null).optional(),
   }),
 };
 
@@ -130,6 +138,7 @@ const purgeCurrentSchoolDataSchema = {
 module.exports = {
   createSchoolSchema,
   updateSchoolSchema,
+  updateSchoolStatusSchema,
   updateCurrentSchoolProfileSchema,
   updateSettingsSchema,
   updateBrandingSchema,

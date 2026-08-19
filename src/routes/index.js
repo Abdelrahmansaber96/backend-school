@@ -18,6 +18,7 @@ const reportRoutes = require('./report.routes');
 const auditLogRoutes = require('./auditLog.routes');
 const uploadRoutes = require('./upload.routes');
 const dashboardRoutes = require('./dashboard.routes');
+const registrationInviteRoutes = require('./registrationInvite.routes');
 
 router.use('/auth', authRoutes);
 router.use('/users', userRoutes);
@@ -36,5 +37,6 @@ router.use('/reports', reportRoutes);
 router.use('/audit-logs', auditLogRoutes);
 router.use('/uploads', uploadRoutes);
 router.use('/dashboard', dashboardRoutes);
+router.use('/registration-invites', registrationInviteRoutes);
 
 module.exports = router;

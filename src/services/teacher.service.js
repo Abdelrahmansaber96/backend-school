@@ -7,6 +7,8 @@ const ApiError = require('../utils/ApiError');
 const { getPagination, getSorting, buildPagination } = require('../utils/pagination');
 const { getTeacherScope, ensureSchoolReferences } = require('../utils/accessScope');
 const { assertRequesterRole } = require('../utils/authorization');
+const notificationService = require('./notification.service');
+const notificationTemplates = require('../utils/notificationTemplates');
 
 const normalizeImportHeader = (value) => String(value || '')
   .trim()
@@ -164,6 +166,9 @@ const createTeacher = async (data, schoolId, requester = {}) => {
     userId: user._id, schoolId, nationalId, specialization, subjects, classes, joinDate,
   });
 
+  const localized = notificationTemplates.accountCreated({ label: 'معلم', name: `${name.first} ${name.last}` });
+  await notificationService.createNotification({ schoolId, userId: requester.userId, type: 'account', ...localized, data: { entityType: 'teacher', entityId: teacher._id }, deliveryMethod: ['in_app'] }).catch(() => null);
+
   return { teacher, tempPassword };
 };
 
@@ -253,6 +258,9 @@ const importTeachers = async (file, schoolId, requester = {}) => {
       errors.push(buildImportError(row.rowNumber, error.message, row.raw));
     }
   }
+
+  const localizedImport = notificationTemplates.importComplete({ imported: created.length, failed: errors.length, label: 'معلم' });
+  await notificationService.createNotification({ schoolId, userId: requester.userId, type: 'account', ...localizedImport, data: { entityType: 'teacher_import' }, deliveryMethod: ['in_app'] }).catch(() => null);
 
   return {
     summary: {

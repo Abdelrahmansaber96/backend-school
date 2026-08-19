@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 
 const {
-  listStudents, getStudentById, getMyStudentProfile, createStudent, exportStudents, importStudents, updateStudent, deleteStudent,
+  listStudents, getStudentById, getMyStudentProfile, createStudent, listWhatsAppRecipients, exportStudents, importStudents, updateStudent, deleteStudent,
 } = require('../controllers/student.controller');
 const authenticate = require('../middlewares/auth.middleware');
 const tenantMiddleware = require('../middlewares/tenant.middleware');
@@ -16,6 +16,7 @@ router.use(authenticate, tenantMiddleware);
 
 router.get('/', rbac('super_admin', 'school_admin', 'teacher'), listStudents);
 router.get('/export', rbac('super_admin', 'school_admin', 'teacher'), exportStudents);
+router.get('/whatsapp-recipients', rbac('school_admin', 'teacher'), listWhatsAppRecipients);
 router.post('/import', rbac('school_admin'), uploadLimiter, (req, res, next) => {
   const uploader = createUploader('import');
   uploader.single('file')(req, res, next);

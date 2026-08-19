@@ -14,6 +14,7 @@ const {
 } = require('../utils/accessScope');
 const { assertRequesterRole } = require('../utils/authorization');
 const { getCurrentHijriAcademicYear } = require('../utils/academicYear');
+const notificationTemplates = require('../utils/notificationTemplates');
 
 const linkUploadedFiles = async (attachments, schoolId, contextId) => {
   const fileIds = (attachments || [])
@@ -78,7 +79,19 @@ const listBehavior = async (query, schoolId, requester = {}) => {
   if (query.classId) filter.classId = query.classId;
   if (query.type) filter.type = query.type;
   if (query.teacherId) filter.teacherId = query.teacherId;
+  if (query.category) filter.category = query.category;
   if (query.academicYear) filter.academicYear = query.academicYear;
+  if (query.grade && !query.classId) {
+    const classIds = await Class.distinct('_id', { schoolId, grade: String(query.grade), isDeleted: false });
+    filter.classId = { $in: classIds };
+  }
+  if (query.startDate || query.endDate) {
+    filter.createdAt = {};
+    if (query.startDate) filter.createdAt.$gte = new Date(query.startDate);
+    if (query.endDate) {
+      const end = new Date(query.endDate); end.setHours(23, 59, 59, 999); filter.createdAt.$lte = end;
+    }
+  }
 
   if (requester.role === 'parent') {
     const parentScope = await getParentScope(requester.userId, schoolId);
@@ -96,7 +109,10 @@ const listBehavior = async (query, schoolId, requester = {}) => {
       ensureTeacherClassAccess(query.classId, teacherScope);
       filter.classId = query.classId;
     } else {
-      filter.classId = { $in: teacherScope.classIds };
+      const requestedIds = filter.classId?.$in?.map(String);
+      filter.classId = { $in: requestedIds
+        ? teacherScope.classIds.filter((id) => requestedIds.includes(String(id)))
+        : teacherScope.classIds };
     }
 
     if (query.studentId) {
@@ -168,7 +184,7 @@ const createBehavior = async (data, schoolId, requester = {}) => {
 
   // Ensure student belongs to the school
   const [student, teacherId] = await Promise.all([
-    Student.findOne({ _id: studentId, schoolId, classId, isDeleted: false }),
+    Student.findOne({ _id: studentId, schoolId, classId, isDeleted: false }).populate('userId', 'name'),
     resolveBehaviorTeacherId(classId, schoolId, requester),
   ]);
   if (!student) throw new ApiError(404, 'Student not found in this school');
@@ -186,13 +202,18 @@ const createBehavior = async (data, schoolId, requester = {}) => {
     setImmediate(async () => {
       try {
         const notifService = require('./notification.service');
+        const localized = notificationTemplates.behavior({
+          positive: type === 'positive',
+          studentName: [student.userId?.name?.first, student.userId?.name?.last].filter(Boolean).join(' '),
+          description,
+        });
         await notifService.createNotification({
           schoolId,
           userId: null, // will look up parent's userId
           parentId: student.parentId,
           type: 'behavior',
-          title: type === 'positive' ? 'Positive Behavior Recorded' : 'Behavior Incident Reported',
-          body: description.slice(0, 150),
+          title: localized.title,
+          body: localized.body,
           data: { entityType: 'behaviors', entityId: behavior._id },
           deliveryMethod: ['in_app', 'email'],
         });

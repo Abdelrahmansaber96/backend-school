@@ -28,6 +28,18 @@ const studentReport = asyncHandler(async (req, res) => {
   return res.status(200).json(new ApiResponse(200, report, 'Student report generated'));
 });
 
+const comprehensiveReport = asyncHandler(async (req, res) => {
+  const report = await reportService.comprehensiveReport(req.query, req.schoolId, getRequesterContext(req));
+  return res.status(200).json(new ApiResponse(200, report, 'تم إنشاء التقرير الشامل'));
+});
+
+const exportComprehensiveReport = asyncHandler(async (req, res) => {
+  const file = await reportService.exportComprehensiveReport(req.query, req.schoolId, getRequesterContext(req));
+  res.setHeader('Content-Type', file.mimeType);
+  res.setHeader('Content-Disposition', `attachment; filename="${file.fileName}"`);
+  return res.status(200).send(file.content);
+});
+
 const exportAttendanceReport = asyncHandler(async (req, res) => {
   const file = await reportService.exportAttendanceReport(req.query, req.schoolId, getRequesterContext(req));
 
@@ -90,6 +102,8 @@ module.exports = {
   behaviorReport,
   gradeReport,
   studentReport,
+  comprehensiveReport,
+  exportComprehensiveReport,
   exportAttendanceReport,
   exportBehaviorReport,
   schoolSummary,

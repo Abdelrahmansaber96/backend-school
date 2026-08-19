@@ -14,6 +14,7 @@ const Student = require('../models/Student.model');
 const Subject = require('../models/Subject.model');
 const Teacher = require('../models/Teacher.model');
 const User = require('../models/User.model');
+const { sendEmailVerification } = require('./auth.service');
 const ApiError = require('../utils/ApiError');
 const { hashPassword } = require('../utils/password');
 const { getPagination, getSorting, buildPagination } = require('../utils/pagination');
@@ -310,6 +311,7 @@ const createSchool = async ({
       name: admin.name,
       mustChangePassword: true,
     });
+    await sendEmailVerification(adminUser).catch(() => null);
     return { school, adminUser, tempPassword };
   } catch (err) {
     await School.deleteOne({ _id: school._id });
@@ -349,6 +351,23 @@ const updateSchool = async (schoolId, updates, requester = {}) => {
   const school = await School.findOneAndUpdate(
     { _id: schoolId, isDeleted: false },
     { $set: schoolUpdates },
+    { new: true, runValidators: true },
+  );
+  if (!school) throw new ApiError(404, 'School not found');
+  return school;
+};
+
+const updateSchoolStatus = async (schoolId, { status, reason }, requester = {}) => {
+  assertRequesterRole(requester, ['super_admin']);
+  const suspended = status === 'suspended';
+  const school = await School.findOneAndUpdate(
+    { _id: schoolId, isDeleted: false },
+    { $set: {
+      status,
+      isActive: !suspended,
+      suspensionReason: suspended ? String(reason || 'موقوف مؤقتًا بواسطة إدارة المنصة').trim() : null,
+      suspendedAt: suspended ? new Date() : null,
+    } },
     { new: true, runValidators: true },
   );
   if (!school) throw new ApiError(404, 'School not found');
@@ -491,7 +510,7 @@ const purgeCurrentSchoolData = async (schoolId, input = {}, requester = {}) => {
 };
 
 module.exports = {
-  listSchools, getSchoolById, createSchool, updateSchool, updateCurrentSchoolProfile, updateSettings, deleteSchool,
+  listSchools, getSchoolById, createSchool, updateSchool, updateSchoolStatus, updateCurrentSchoolProfile, updateSettings, deleteSchool,
   getBySubdomain, getCurrentSchool, updateBranding, purgeCurrentSchoolData,
   __testables: {
     SCHOOL_DATA_PURGE_CONFIRMATION_TEXT,

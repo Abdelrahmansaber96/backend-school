@@ -2,6 +2,7 @@ const { verifyAccessToken } = require('../utils/jwt');
 const ApiError = require('../utils/ApiError');
 const asyncHandler = require('../utils/asyncHandler');
 const User = require('../models/User.model');
+const School = require('../models/School.model');
 
 const resolveAuthenticatedUser = async (req) => {
   const authHeader = req.headers.authorization;
@@ -25,6 +26,13 @@ const resolveAuthenticatedUser = async (req) => {
   const user = await User.findById(decoded._id).select('isActive isDeleted role schoolId name');
   if (!user || user.isDeleted || !user.isActive) {
     throw new ApiError(401, 'User account is inactive or deleted');
+  }
+
+  if (user.schoolId && user.role !== 'super_admin') {
+    const school = await School.findById(user.schoolId).select('status isActive isDeleted');
+    if (!school || school.isDeleted || school.isActive === false || school.status === 'suspended') {
+      throw new ApiError(403, 'المدرسة موقوفة مؤقتًا. يرجى التواصل مع إدارة المنصة.', 'SCHOOL_SUSPENDED');
+    }
   }
 
   return {

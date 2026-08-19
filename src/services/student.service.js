@@ -20,8 +20,8 @@ const { toObjectId, toObjectIds, escapeRegex } = require('../utils/mongo');
 const auditLogger = require('../utils/auditLogger');
 const notificationService = require('./notification.service');
 const { createClass: createClassService } = require('./class.service');
-const { generateTempPassword } = require('../utils/password');
 const { getCurrentHijriAcademicYear } = require('../utils/academicYear');
+const notificationTemplates = require('../utils/notificationTemplates');
 
 const IMPORT_SPECIAL_STATUS = new Set(['orphan', 'health_condition', 'learning_difficulty']);
 const OBJECT_ID_PATTERN = /^[a-f\d]{24}$/i;
@@ -892,17 +892,34 @@ const getMyStudentProfile = async (schoolId, requester = {}) => {
 const createStudent = async (data, schoolId, requester = {}) => {
   assertRequesterRole(requester, ['school_admin']);
 
-  const { nationalId, name, phone, classId, parentId, emergencyContacts, gender, dateOfBirth, healthStatus, specialStatus } = data;
+  const {
+    nationalId, name, phone, classId, parentId, newParent, temporaryPassword,
+    emergencyContacts, gender, dateOfBirth, healthStatus, specialStatus,
+  } = data;
 
   const existing = await User.findOne({ $or: [{ nationalId }, { phone }], isDeleted: false });
   if (existing) throw new ApiError(409, 'National ID or phone already in use');
 
-  const [parent, resolvedClass] = await Promise.all([
+  let [parent, resolvedClass] = await Promise.all([
     parentId ? ensureSchoolReference(Parent, parentId, schoolId, 'Parent') : Promise.resolve(null),
     classId ? ensureSchoolReference(Class, classId, schoolId, 'Class') : Promise.resolve(null),
   ]);
 
-  const hiddenPassword = generateTempPassword();
+  let parentTempPassword = null;
+  if (newParent) {
+    const duplicateParent = await User.findOne({
+      $or: [{ nationalId: newParent.nationalId }, { phone: newParent.phone }], isDeleted: false,
+    });
+    if (duplicateParent) throw new ApiError(409, 'رقم هوية أو جوال ولي الأمر مستخدم بالفعل');
+    parentTempPassword = `Parent@${newParent.nationalId.slice(-4)}`;
+    const parentUser = await User.create({
+      schoolId, role: 'parent', nationalId: newParent.nationalId, phone: newParent.phone,
+      email: newParent.email || null, password: parentTempPassword, name: newParent.name, mustChangePassword: true,
+    });
+    parent = await Parent.create({ schoolId, userId: parentUser._id, nationalId: newParent.nationalId, children: [] });
+  }
+
+  const hiddenPassword = temporaryPassword || `Student@${nationalId.slice(-4)}`;
 
   const user = await User.create({
     schoolId, role: 'student', nationalId, phone,
@@ -926,7 +943,45 @@ const createStudent = async (data, schoolId, requester = {}) => {
   }
 
   // Returned only in the creation response; the User model stores a hash, not this value.
-  return { student, tempPassword: hiddenPassword };
+  return { student, tempPassword: hiddenPassword, parent, parentTempPassword };
+};
+
+const listWhatsAppRecipients = async (query, schoolId, requester = {}) => {
+  assertRequesterRole(requester, ['school_admin', 'teacher']);
+  const { page, limit, skip } = getPagination({ ...query, limit: query.limit || 50 });
+  const filter = { schoolId, isDeleted: false, isActive: true };
+  if (query.classId) filter.classId = query.classId;
+  if (query.grade && !query.classId) {
+    filter.classId = { $in: await Class.distinct('_id', { schoolId, grade: String(query.grade), isDeleted: false, isActive: true }) };
+  }
+
+  const localized = notificationTemplates.accountCreated({ label: 'طالب', name: `${name.first} ${name.last}` });
+  await notificationService.createNotification({ schoolId, userId: requester.userId, type: 'account', ...localized, data: { entityType: 'student', entityId: student._id }, deliveryMethod: ['in_app'] }).catch(() => null);
+  if (Array.isArray(query.studentIds) && query.studentIds.length) filter._id = { $in: query.studentIds };
+  if (requester.role === 'teacher') {
+    const scope = await getTeacherScope(requester.userId, schoolId);
+    const allowed = scope.classIds.map(String);
+    if (query.classId) ensureTeacherClassAccess(query.classId, scope);
+    else if (filter.classId?.$in) filter.classId.$in = filter.classId.$in.filter((id) => allowed.includes(String(id)));
+    else filter.classId = { $in: scope.classIds };
+  }
+  const [students, total] = await Promise.all([
+    Student.find(filter).sort({ createdAt: 1 }).skip(skip).limit(limit)
+      .populate('userId', 'name phone')
+      .populate('classId', 'name grade section')
+      .populate({ path: 'parentId', select: 'userId', populate: { path: 'userId', select: 'name phone' } }).lean(),
+    Student.countDocuments(filter),
+  ]);
+  const data = students.map((student) => ({
+    _id: String(student._id),
+    name: `${student.userId?.name?.first || ''} ${student.userId?.name?.last || ''}`.trim(),
+    grade: student.classId?.grade || null,
+    className: student.classId?.name || null,
+    classId: student.classId?._id || null,
+    phone: student.parentId?.userId?.phone || student.emergencyContacts?.[0]?.phone || student.userId?.phone || null,
+    contactSource: student.parentId?.userId?.phone ? 'parent' : student.emergencyContacts?.[0]?.phone ? 'emergency' : student.userId?.phone ? 'student' : null,
+  }));
+  return { data, meta: buildPagination(total, page, limit, { query }) };
 };
 
 const exportStudents = async (query, schoolId, requester = {}) => {
@@ -1120,12 +1175,13 @@ const importStudents = async (file, schoolId, requester = {}) => {
     unassignedCount,
   };
 
+  const localizedImport = notificationTemplates.importComplete({ imported: summary.importedCount, failed: summary.errorCount });
   await notificationService.createNotification({
     schoolId,
     userId: requester.userId,
     type: 'import_complete',
-    title: 'Student import completed',
-    body: `${summary.importedCount} students imported, ${summary.errorCount} rows failed validation.`,
+    title: localizedImport.title,
+    body: localizedImport.body,
     data: {
       entityType: 'students',
       extra: summary,
@@ -1216,6 +1272,7 @@ module.exports = {
   getStudentById,
   getMyStudentProfile,
   createStudent,
+  listWhatsAppRecipients,
   exportStudents,
   importStudents,
   updateStudent,

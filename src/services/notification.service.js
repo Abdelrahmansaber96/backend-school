@@ -46,7 +46,7 @@ const createNotification = async ({
       await sendMockEmail({
         to: targetUser.email,
         subject: title,
-        text: `${body}\n\nNotification type: ${type}`,
+        text: `${body}\n\nنوع الإشعار: ${type}`,
         metadata: {
           notificationId: String(notification._id),
           userId: String(targetUserId),

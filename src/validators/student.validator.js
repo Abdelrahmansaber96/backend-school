@@ -10,6 +10,13 @@ const emergencyContactSchema = Joi.object({
   phone: Joi.string().min(7).max(20).required(),
   relationship: Joi.string().min(2).max(50).required(),
 });
+const temporaryPasswordSchema = Joi.string().min(8).pattern(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/);
+const newParentSchema = Joi.object({
+  nationalId: Joi.string().min(5).max(20).required(),
+  name: nameSchema.required(),
+  phone: Joi.string().min(7).max(20).required(),
+  email: Joi.string().email().allow('', null).optional(),
+});
 
 const createStudentSchema = {
   body: Joi.object({
@@ -18,6 +25,8 @@ const createStudentSchema = {
     phone: Joi.string().min(7).max(20).required(),
     classId: objectId.required(),
     parentId: objectId.optional(),
+    newParent: newParentSchema.optional(),
+    temporaryPassword: temporaryPasswordSchema.optional(),
     emergencyContacts: Joi.array().items(emergencyContactSchema).max(5).optional(),
     gender: Joi.string().valid('male', 'female', 'unspecified').optional(),
     dateOfBirth: Joi.date().iso().optional(),
@@ -25,7 +34,7 @@ const createStudentSchema = {
     specialStatus: Joi.array()
       .items(Joi.string().valid('orphan', 'health_condition', 'learning_difficulty'))
       .optional(),
-  }),
+  }).oxor('parentId', 'newParent'),
 };
 
 const updateStudentSchema = {

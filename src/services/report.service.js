@@ -8,6 +8,7 @@ const Student = require('../models/Student.model');
 const Class = require('../models/Class.model');
 const School = require('../models/School.model');
 const Teacher = require('../models/Teacher.model');
+const Grade = require('../models/Grade.model');
 const gradeService = require('./grade.service');
 const ApiError = require('../utils/ApiError');
 const { buildCsv } = require('../utils/csv');
@@ -52,6 +53,9 @@ const arabicDateFormatter = new Intl.DateTimeFormat('ar-EG', {
   month: '2-digit',
   day: '2-digit',
 });
+const hijriDateFormatter = new Intl.DateTimeFormat('ar-SA-u-ca-islamic-umalqura', {
+  year: 'numeric', month: 'long', day: 'numeric',
+});
 const arabicDateTimeFormatter = new Intl.DateTimeFormat('ar-EG', {
   year: 'numeric',
   month: '2-digit',
@@ -88,7 +92,7 @@ const formatArabicDate = (value) => {
     return String(value);
   }
 
-  return arabicDateFormatter.format(date);
+  return `${arabicDateFormatter.format(date)} م — ${hijriDateFormatter.format(date)} هـ`;
 };
 
 const formatArabicDateTime = (value) => {
@@ -99,7 +103,7 @@ const formatArabicDateTime = (value) => {
     return String(value);
   }
 
-  return arabicDateTimeFormatter.format(date);
+  return `${arabicDateTimeFormatter.format(date)} م — ${hijriDateFormatter.format(date)} هـ`;
 };
 
 const resolveReportPdfFontPath = () => REPORT_PDF_FONT_CANDIDATES.find((candidate) => candidate && fs.existsSync(candidate)) || null;
@@ -843,6 +847,92 @@ const studentReport = async ({ studentId, startDate, endDate, academicYear }, sc
   };
 };
 
+const comprehensiveReport = async ({ scopeType, scopeId, startDate, endDate, academicYear }, schoolId, requester = {}) => {
+  assertRequesterRole(requester, ['super_admin', 'school_admin', 'teacher', 'parent', 'student']);
+  if (!['student', 'class', 'teacher'].includes(scopeType)) throw new ApiError(400, 'scopeType must be student, class, or teacher');
+  if (!scopeId && requester.role !== 'student') throw new ApiError(400, 'scopeId is required');
+
+  if (scopeType === 'student') {
+    return { scopeType, generatedAt: new Date(), data: await studentReport({ studentId: scopeId, startDate, endDate, academicYear }, schoolId, requester) };
+  }
+
+  const range = normalizeDateRange({ startDate, endDate }, { requireRange: false, defaultDays: 90 });
+  if (scopeType === 'class') {
+    const classDoc = await Class.findOne({ _id: scopeId, schoolId, isDeleted: false }).select('name grade section').lean();
+    if (!classDoc) throw new ApiError(404, 'Class not found');
+    if (requester.role === 'teacher') {
+      const teacherScope = await getTeacherScope(requester.userId, schoolId);
+      ensureTeacherClassAccess(scopeId, teacherScope);
+    } else if (!['super_admin', 'school_admin'].includes(requester.role)) throw new ApiError(403, 'Access denied');
+    const params = { classId: scopeId, startDate: range.startDateLabel, endDate: range.endDateLabel, academicYear };
+    const [attendance, behavior, grades, studentsCount] = await Promise.all([
+      attendanceReport(params, schoolId, requester), behaviorReport(params, schoolId, requester),
+      gradeReport(params, schoolId, requester), Student.countDocuments({ schoolId, classId: scopeId, isDeleted: false, isActive: true }),
+    ]);
+    return { scopeType, generatedAt: new Date(), scope: classDoc, data: { studentsCount, attendance, behavior, grades } };
+  }
+
+  const teacher = await Teacher.findOne({ _id: scopeId, schoolId, isDeleted: false }).populate('userId', 'name').populate('classes', 'name grade section').lean();
+  if (!teacher) throw new ApiError(404, 'Teacher not found');
+  if (requester.role === 'teacher' && String(teacher.userId?._id) !== String(requester.userId)) throw new ApiError(403, 'Access denied');
+  if (!['super_admin', 'school_admin', 'teacher'].includes(requester.role)) throw new ApiError(403, 'Access denied');
+  const activityDate = { $gte: range.startDate, $lte: range.endDate };
+  const [grades, studentsCount, attendanceEntries, behaviorEntries, gradeEntries] = await Promise.all([
+    gradeReport({ teacherId: scopeId, startDate: range.startDateLabel, endDate: range.endDateLabel, academicYear }, schoolId, requester),
+    Student.countDocuments({ schoolId, classId: { $in: teacher.classes.map((item) => item._id) }, isDeleted: false, isActive: true }),
+    Attendance.countDocuments({ schoolId, teacherId: scopeId, isDeleted: false, date: activityDate }),
+    Behavior.countDocuments({ schoolId, teacherId: scopeId, isDeleted: false, createdAt: activityDate }),
+    Grade.countDocuments({ schoolId, teacherId: scopeId, isDeleted: false, examDate: activityDate }),
+  ]);
+  return {
+    scopeType, generatedAt: new Date(), period: { startDate: range.startDateLabel, endDate: range.endDateLabel },
+    scope: { _id: teacher._id, name: teacher.userId?.name || null, classes: teacher.classes },
+    data: { performance: { studentsCount, classesCount: teacher.classes.length, grades }, activity: { attendanceEntries, behaviorEntries, gradeEntries } },
+  };
+};
+
+const exportComprehensiveReport = async (query, schoolId, requester = {}) => {
+  const report = await comprehensiveReport(query, schoolId, requester);
+  const school = await School.findById(schoolId).select('name nameAr').lean();
+  const rows = [];
+  if (report.scopeType === 'student') {
+    const data = report.data;
+    rows.push(
+      { section: 'الحضور', metric: 'الغياب', value: data.attendance.absences },
+      { section: 'الحضور', metric: 'التأخر', value: data.attendance.lates },
+      { section: 'الحضور', metric: 'الإذن', value: data.attendance.permissions },
+      { section: 'الحضور', metric: 'نسبة الحضور', value: `${data.attendance.attendanceRate}%` },
+      { section: 'السلوك', metric: 'إيجابي', value: data.behavior.positive },
+      { section: 'السلوك', metric: 'سلبي', value: data.behavior.negative },
+      { section: 'الدرجات', metric: 'المتوسط', value: `${data.grades.overview?.averagePercentage ?? 0}%` },
+    );
+  } else if (report.scopeType === 'class') {
+    rows.push(
+      { section: 'الفصل', metric: 'عدد الطلاب', value: report.data.studentsCount },
+      { section: 'الحضور', metric: 'الغياب', value: report.data.attendance.summary.totalAbsences },
+      { section: 'الحضور', metric: 'التأخر', value: report.data.attendance.summary.totalLates },
+      { section: 'الحضور', metric: 'الإذن', value: report.data.attendance.summary.totalPermissions },
+      { section: 'السلوك', metric: 'إيجابي', value: report.data.behavior.positive },
+      { section: 'السلوك', metric: 'سلبي', value: report.data.behavior.negative },
+    );
+  } else {
+    rows.push(
+      { section: 'الأداء', metric: 'عدد الفصول', value: report.data.performance.classesCount },
+      { section: 'الأداء', metric: 'عدد الطلاب', value: report.data.performance.studentsCount },
+      { section: 'نشاط المعلم', metric: 'سجلات الحضور', value: report.data.activity.attendanceEntries },
+      { section: 'نشاط المعلم', metric: 'سجلات السلوك', value: report.data.activity.behaviorEntries },
+      { section: 'نشاط المعلم', metric: 'سجلات الدرجات', value: report.data.activity.gradeEntries },
+    );
+  }
+  return buildExportFile({
+    format: query.format, baseFileName: `comprehensive-${query.scopeType}-${query.scopeId}`,
+    title: 'التقرير الشامل', sheetName: 'التقرير الشامل',
+    columns: [{ key: 'section', label: 'القسم' }, { key: 'metric', label: 'المؤشر' }, { key: 'value', label: 'القيمة' }],
+    rows,
+    summaryLines: [`المدرسة: ${school?.nameAr || school?.name || ''}`, `تاريخ التجهيز: ${formatArabicDateTime(new Date())}`],
+  });
+};
+
 const exportAttendanceReport = async (query, schoolId, requester = {}) => {
   const report = await attendanceReport(query, schoolId, requester);
   return buildExportFile(buildAttendanceExportDefinition(report, query));
@@ -961,6 +1051,8 @@ module.exports = {
   behaviorReport,
   gradeReport,
   studentReport,
+  comprehensiveReport,
+  exportComprehensiveReport,
   exportAttendanceReport,
   exportBehaviorReport,
   schoolSummary,

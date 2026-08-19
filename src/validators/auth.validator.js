@@ -26,10 +26,14 @@ const resetPasswordSchema = {
   params: Joi.object({
     userId: Joi.string().hex().length(24).required(),
   }),
+  body: Joi.object({
+    temporaryPassword: Joi.string().min(8).pattern(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/).optional(),
+  }),
 };
 
 const registerSchoolSchema = {
   body: Joi.object({
+    inviteCode: Joi.string().trim().min(8).max(32).required(),
     schoolName: Joi.string().min(2).max(100).required(),
     schoolNameAr: Joi.string().max(100).optional(),
     subdomain: Joi.string()
@@ -41,7 +45,7 @@ const registerSchoolSchema = {
       }),
     address: Joi.string().min(5).max(200).required(),
     phone: Joi.string().min(7).max(20).required(),
-    email: Joi.string().email().optional(),
+    email: Joi.string().email().required(),
     admin: Joi.object({
       name: Joi.object({
         first: Joi.string().min(2).max(50).required(),
@@ -49,7 +53,7 @@ const registerSchoolSchema = {
       }).required(),
       nationalId: Joi.string().min(5).max(20).required(),
       phone: Joi.string().min(7).max(20).required(),
-      email: Joi.string().email().optional(),
+      email: Joi.string().email().required(),
       password: Joi.string()
         .min(8)
         .pattern(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
@@ -62,4 +66,17 @@ const registerSchoolSchema = {
   }),
 };
 
-module.exports = { loginSchema, changePasswordSchema, resetPasswordSchema, registerSchoolSchema };
+const requestEmailResetSchema = { body: Joi.object({
+  identifier: Joi.string().trim().required(),
+  email: Joi.string().email().required(),
+}) };
+const completeEmailResetSchema = { body: Joi.object({
+  token: Joi.string().hex().length(64).required(),
+  newPassword: Joi.string().min(8).pattern(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/).required(),
+}) };
+const verifyEmailSchema = { body: Joi.object({ token: Joi.string().hex().length(64).required() }) };
+
+module.exports = {
+  loginSchema, changePasswordSchema, resetPasswordSchema, registerSchoolSchema,
+  requestEmailResetSchema, completeEmailResetSchema, verifyEmailSchema,
+};

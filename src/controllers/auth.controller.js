@@ -124,10 +124,26 @@ const resetPassword = asyncHandler(async (req, res) => {
     req.params.userId,
     req.user.role,
     req.schoolId || req.user.schoolId || null,
+    req.body.temporaryPassword || null,
   );
   return res.status(200).json(
     new ApiResponse(200, { tempPassword }, 'Password reset. User must change on next login.'),
   );
+});
+
+const requestEmailPasswordReset = asyncHandler(async (req, res) => {
+  await authService.requestEmailPasswordReset(req.body);
+  return res.status(200).json(new ApiResponse(200, null, 'إذا كانت البيانات صحيحة فسيصل رابط الاستعادة إلى البريد المسجل.'));
+});
+
+const completeEmailPasswordReset = asyncHandler(async (req, res) => {
+  await authService.completeEmailPasswordReset(req.body);
+  return res.status(200).json(new ApiResponse(200, null, 'تم تغيير كلمة المرور بنجاح.'));
+});
+
+const verifyEmail = asyncHandler(async (req, res) => {
+  await authService.verifyEmail(req.body.token);
+  return res.status(200).json(new ApiResponse(200, null, 'تم تأكيد البريد الإلكتروني.'));
 });
 
 /**
@@ -145,4 +161,7 @@ const registerSchool = asyncHandler(async (req, res) => {
   );
 });
 
-module.exports = { login, logout, refresh, changePassword, resetPassword, registerSchool };
+module.exports = {
+  login, logout, refresh, changePassword, resetPassword, registerSchool,
+  requestEmailPasswordReset, completeEmailPasswordReset, verifyEmail,
+};

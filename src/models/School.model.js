@@ -83,6 +83,9 @@ const schoolSchema = new mongoose.Schema(
     settings: { type: settingsSchema, default: () => ({}) },
     administration: { type: administrationSchema, default: () => ({}) },
     isActive: { type: Boolean, default: true },
+    status: { type: String, enum: ['active', 'suspended'], default: 'active' },
+    suspensionReason: { type: String, trim: true, maxlength: 500, default: null },
+    suspendedAt: { type: Date, default: null },
     isDeleted: { type: Boolean, default: false },
     deletedAt: { type: Date, default: null },
   },
@@ -90,6 +93,7 @@ const schoolSchema = new mongoose.Schema(
 );
 
 schoolSchema.index({ isActive: 1 });
+schoolSchema.index({ status: 1 });
 schoolSchema.index({ isDeleted: 1 });
 
 module.exports = mongoose.model('School', schoolSchema);

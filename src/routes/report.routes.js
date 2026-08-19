@@ -6,6 +6,8 @@ const {
 	behaviorReport,
 	gradeReport,
 	studentReport,
+	comprehensiveReport,
+	exportComprehensiveReport,
 	exportAttendanceReport,
 	exportBehaviorReport,
 	schoolSummary,
@@ -20,8 +22,10 @@ router.get('/attendance/export', rbac('super_admin', 'school_admin', 'teacher'),
 router.get('/attendance', rbac('super_admin', 'school_admin', 'teacher'), attendanceReport);
 router.get('/behavior/export', rbac('super_admin', 'school_admin', 'teacher'), exportBehaviorReport);
 router.get('/behavior', rbac('super_admin', 'school_admin', 'teacher'), behaviorReport);
+router.get('/comprehensive/export', rbac('super_admin', 'school_admin', 'teacher', 'parent', 'student'), exportComprehensiveReport);
 	router.get('/grades', rbac('super_admin', 'school_admin', 'teacher'), gradeReport);
 	router.get('/student', rbac('super_admin', 'school_admin', 'teacher', 'parent', 'student'), studentReport);
+router.get('/comprehensive', rbac('super_admin', 'school_admin', 'teacher', 'parent', 'student'), comprehensiveReport);
 router.get('/summary', rbac('super_admin', 'school_admin'), schoolSummary);
 
 module.exports = router;

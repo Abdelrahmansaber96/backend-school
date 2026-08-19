@@ -25,8 +25,20 @@ const getMyStudentProfile = asyncHandler(async (req, res) => {
 const createStudent = asyncHandler(async (req, res) => {
   const result = await studentService.createStudent(req.body, req.schoolId, getRequesterContext(req));
   return res.status(201).json(
-    new ApiResponse(201, { student: result.student, tempPassword: result.tempPassword }, 'Student created'),
+    new ApiResponse(201, {
+      student: result.student,
+      tempPassword: result.tempPassword,
+      parent: result.parent || null,
+      parentTempPassword: result.parentTempPassword || null,
+    }, 'Student created'),
   );
+});
+
+const listWhatsAppRecipients = asyncHandler(async (req, res) => {
+  const query = { ...req.query };
+  if (typeof query.studentIds === 'string') query.studentIds = query.studentIds.split(',').filter(Boolean);
+  const result = await studentService.listWhatsAppRecipients(query, req.schoolId, getRequesterContext(req));
+  return res.status(200).json(new ApiResponse(200, result.data, 'تم جلب مستلمي واتساب', result.meta));
 });
 
 const exportStudents = asyncHandler(async (req, res) => {
@@ -57,6 +69,7 @@ module.exports = {
   getStudentById,
   getMyStudentProfile,
   createStudent,
+  listWhatsAppRecipients,
   exportStudents,
   importStudents,
   updateStudent,

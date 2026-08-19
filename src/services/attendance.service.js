@@ -19,6 +19,7 @@ const { queueSocketEvent } = require('../sockets/socket.emitter');
 const { socketRooms, SOCKET_EVENTS } = require('../sockets/socket.contract');
 const { toObjectId, toObjectIdMatch } = require('../utils/mongo');
 const { getCurrentHijriAcademicYear } = require('../utils/academicYear');
+const notificationTemplates = require('../utils/notificationTemplates');
 
 const EMPTY_ATTENDANCE_SUMMARY = { total: 0, absence: 0, late: 0, permission: 0 };
 
@@ -73,7 +74,10 @@ const applyOwnershipFilter = async (filter, schoolId, requester = {}, requestedS
       ensureTeacherClassAccess(requestedClassId, teacherScope);
       filter.classId = requestedClassId;
     } else {
-      filter.classId = { $in: teacherScope.classIds };
+      const requestedIds = filter.classId?.$in?.map(String);
+      filter.classId = { $in: requestedIds
+        ? teacherScope.classIds.filter((id) => requestedIds.includes(String(id)))
+        : teacherScope.classIds };
     }
 
     if (requestedStudentId) {
@@ -161,16 +165,13 @@ const emitAttendanceCreatedEvents = async (records, schoolId) => {
       payload: buildAttendanceSocketPayload(record, student),
     });
 
+    const localized = notificationTemplates.attendance({ studentName: formatStudentName(student) || 'الطالب', type: record.type, date: record.date });
     await notificationService.createNotification({
       schoolId,
       userId: parentUserId,
       type: 'attendance',
-      title: record.type === 'absence'
-        ? 'Attendance absence recorded'
-        : record.type === 'late'
-          ? 'Student marked late'
-          : 'Attendance permission recorded',
-      body: `${formatStudentName(student) || 'Student'} has a new attendance update for ${new Date(record.date).toLocaleDateString('en-GB')}.`,
+      title: localized.title,
+      body: localized.body,
       data: {
         entityType: 'attendance',
         entityId: record._id,
@@ -309,10 +310,24 @@ const getAttendance = async (query, schoolId, requester = {}) => {
   if (query.studentId) filter.studentId = query.studentId;
   if (query.classId) filter.classId = query.classId;
   if (query.type) filter.type = query.type;
+  if (query.teacherId) filter.teacherId = query.teacherId;
+  if (query.grade && !query.classId) {
+    const classIds = await Class.distinct('_id', { schoolId, grade: String(query.grade), isDeleted: false });
+    filter.classId = { $in: classIds };
+  }
+  if (query.date) {
+    const start = new Date(`${query.date}T00:00:00.000`);
+    const end = new Date(`${query.date}T23:59:59.999`);
+    filter.date = { $gte: start, $lte: end };
+  }
   if (query.startDate || query.endDate) {
     filter.date = {};
     if (query.startDate) filter.date.$gte = new Date(query.startDate);
-    if (query.endDate) filter.date.$lte = new Date(query.endDate);
+    if (query.endDate) {
+      const end = new Date(query.endDate);
+      end.setHours(23, 59, 59, 999);
+      filter.date.$lte = end;
+    }
   }
 
   await applyOwnershipFilter(filter, schoolId, requester, query.studentId, query.classId);

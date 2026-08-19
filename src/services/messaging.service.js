@@ -246,13 +246,15 @@ const sendMessage = async (conversationId, senderId, { text, attachments }, scho
   const senderName = formatUserName(populatedMessage.senderId);
   const previewText = String(text || 'Attachment received').trim().slice(0, 100);
   const notificationService = require('./notification.service');
+  const notificationTemplates = require('../utils/notificationTemplates');
 
+  const localized = notificationTemplates.message({ senderName, preview: previewText });
   await Promise.allSettled(otherParticipants.map((recipientId) => notificationService.createNotification({
     schoolId,
     userId: recipientId,
     type: 'message',
-    title: senderName ? `New Message from ${senderName}` : 'New Message',
-    body: previewText,
+    title: localized.title,
+    body: localized.body,
     data: {
       entityType: 'messages',
       entityId: message._id,

@@ -31,6 +31,11 @@ const updateSchool = asyncHandler(async (req, res) => {
   return res.status(200).json(new ApiResponse(200, school, 'School updated'));
 });
 
+const updateSchoolStatus = asyncHandler(async (req, res) => {
+  const school = await schoolService.updateSchoolStatus(req.params.id, req.body, getRequesterContext(req));
+  return res.status(200).json(new ApiResponse(200, school, req.body.status === 'suspended' ? 'تم إيقاف المدرسة مؤقتًا' : 'تم تفعيل المدرسة'));
+});
+
 const updateCurrentSchoolProfile = asyncHandler(async (req, res) => {
   const schoolId = req.schoolId || (req.user && req.user.schoolId);
   if (!schoolId) throw new ApiError(400, 'No school context');
@@ -81,6 +86,6 @@ const purgeCurrentSchoolData = asyncHandler(async (req, res) => {
 });
 
 module.exports = {
-  listSchools, getSchoolById, createSchool, updateSchool, updateCurrentSchoolProfile, updateSettings, deleteSchool,
+  listSchools, getSchoolById, createSchool, updateSchool, updateSchoolStatus, updateCurrentSchoolProfile, updateSettings, deleteSchool,
   getCurrentSchool, updateBranding, purgeCurrentSchoolData,
 };
