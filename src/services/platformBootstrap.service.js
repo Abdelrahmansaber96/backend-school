@@ -37,15 +37,34 @@ const ensureInitialSuperAdmin = async () => {
     return bootstrapUser;
   }
 
-  const conflictingContact = await User.findOne({
-    $or: [
-      { phone: config.INITIAL_SUPER_ADMIN_PHONE },
-      { email: config.INITIAL_SUPER_ADMIN_EMAIL },
-    ],
-  }).select('_id');
+  let bootstrapPhone = config.INITIAL_SUPER_ADMIN_PHONE;
+  let bootstrapEmail = config.INITIAL_SUPER_ADMIN_EMAIL.toLowerCase();
 
-  if (conflictingContact) {
-    throw new Error('Initial super admin phone or email conflicts with an existing user');
+  const [phoneConflict, emailConflict] = await Promise.all([
+    User.exists({ phone: bootstrapPhone }),
+    User.exists({ email: bootstrapEmail }),
+  ]);
+
+  if (phoneConflict) {
+    for (let suffix = 1; suffix <= 99999; suffix += 1) {
+      const candidate = `05999${String(suffix).padStart(5, '0')}`;
+      // Sequential by design: stop as soon as the first deterministic value is free.
+      // eslint-disable-next-line no-await-in-loop
+      if (!await User.exists({ phone: candidate })) {
+        bootstrapPhone = candidate;
+        break;
+      }
+    }
+  }
+
+  if (emailConflict) {
+    const emailLocalPart = `platform-admin.${config.INITIAL_SUPER_ADMIN_NATIONAL_ID}`;
+    bootstrapEmail = `${emailLocalPart}@basma.local`;
+    let suffix = 1;
+    while (await User.exists({ email: bootstrapEmail })) {
+      bootstrapEmail = `${emailLocalPart}.${suffix}@basma.local`;
+      suffix += 1;
+    }
   }
 
   const superAdmin = await User.create({
@@ -54,8 +73,8 @@ const ensureInitialSuperAdmin = async () => {
       last: config.INITIAL_SUPER_ADMIN_LAST_NAME,
     },
     nationalId: config.INITIAL_SUPER_ADMIN_NATIONAL_ID,
-    phone: config.INITIAL_SUPER_ADMIN_PHONE,
-    email: config.INITIAL_SUPER_ADMIN_EMAIL,
+    phone: bootstrapPhone,
+    email: bootstrapEmail,
     emailVerifiedAt: new Date(),
     password: config.INITIAL_SUPER_ADMIN_PASSWORD,
     role: 'super_admin',
