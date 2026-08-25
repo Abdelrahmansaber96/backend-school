@@ -18,10 +18,32 @@ const ensureInitialSuperAdmin = async () => {
       { phone: config.INITIAL_SUPER_ADMIN_PHONE },
       { email: config.INITIAL_SUPER_ADMIN_EMAIL },
     ],
-  }).select('_id role');
+  }).select('+password role nationalId phone email isActive isDeleted');
 
   if (conflictingUser) {
-    throw new Error('Initial super admin identity conflicts with an existing user');
+    const isExactBootstrapIdentity = conflictingUser.nationalId === config.INITIAL_SUPER_ADMIN_NATIONAL_ID
+      && conflictingUser.phone === config.INITIAL_SUPER_ADMIN_PHONE
+      && conflictingUser.email === config.INITIAL_SUPER_ADMIN_EMAIL.toLowerCase();
+
+    if (!isExactBootstrapIdentity) {
+      throw new Error('Initial super admin identity partially conflicts with an existing user');
+    }
+
+    conflictingUser.role = 'super_admin';
+    conflictingUser.schoolId = null;
+    conflictingUser.password = config.INITIAL_SUPER_ADMIN_PASSWORD;
+    conflictingUser.isActive = true;
+    conflictingUser.isDeleted = false;
+    conflictingUser.deletedAt = null;
+    conflictingUser.failedLoginAttempts = 0;
+    conflictingUser.lockedUntil = null;
+    conflictingUser.refreshToken = null;
+    conflictingUser.mustChangePassword = true;
+    conflictingUser.emailVerifiedAt = conflictingUser.emailVerifiedAt || new Date();
+    await conflictingUser.save();
+
+    logger.warn('Existing bootstrap identity restored as initial super admin; password change is required');
+    return conflictingUser;
   }
 
   const superAdmin = await User.create({
