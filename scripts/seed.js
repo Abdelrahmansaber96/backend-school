@@ -36,7 +36,7 @@ async function seed() {
   // Use the real User model path to keep schema consistent
   let User;
   try {
-    User = require('./src/models/User.model');
+    User = require('../src/models/User.model');
   } catch {
     User = mongoose.model('User', userSchema);
   }
@@ -58,8 +58,10 @@ async function seed() {
       console.log(`  ⚠ User ${data.nationalId} already exists — skipping.`);
       continue;
     }
-    const hashed = await bcrypt.hash(data.password, BCRYPT_ROUNDS);
-    await User.create({ ...data, password: hashed });
+    const password = User.schema.path('password')?.options?.select === false
+      ? data.password
+      : await bcrypt.hash(data.password, BCRYPT_ROUNDS);
+    await User.create({ ...data, password, mustChangePassword: true });
     console.log(`  ✅ Created ${data.role}: ${data.name.first} ${data.name.last}`);
     console.log(`     National ID : ${data.nationalId}`);
     console.log(`     Password    : ${data.password}`);

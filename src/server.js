@@ -4,6 +4,7 @@ const connectDB = require('./config/database');
 const config = require('./config/env');
 const logger = require('./utils/logger');
 const { init: initSocketServer } = require('./sockets/socket.server');
+const { ensureInitialSuperAdmin } = require('./services/platformBootstrap.service');
 
 const PORT = config.PORT;
 
@@ -11,6 +12,9 @@ const startServer = async () => {
   try {
     // 1. Connect to MongoDB
     await connectDB();
+
+    // Ensure the platform has a first administrator without overwriting an existing one.
+    await ensureInitialSuperAdmin();
 
     // 2. Create HTTP server
     const httpServer = http.createServer(app);
